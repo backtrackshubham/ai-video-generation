@@ -43,8 +43,20 @@ desktop.ini
 .env
 *.env
 
-# ── T2M-GPT (cloned by setup_windows.bat, not committed to this repo) ─────────
+# ── T2M-GPT (legacy, cloned by setup_windows.bat) ────────────────────────────
 t2m_gpt/
+
+# ── MDM (cloned by setup, not committed) ─────────────────────────────────────
+mdm/save/
+mdm/body_models/smpl/
+mdm/dataset/HumanML3D/
+mdm/glove.zip
+
+# ── Image uploads ─────────────────────────────────────────────────────────────
+uploads/
+
+# ── Gen logs ─────────────────────────────────────────────────────────────────
+gen-logs/
 
 # ── Windows temp / scratch files ─────────────────────────────────────────────
 *.bat~

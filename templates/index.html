@@ -18,6 +18,10 @@
       --muted:     #64748b;
       --border:    #2d3148;
       --radius:    12px;
+      --green:     #059669;
+      --green2:    #10b981;
+      --orange:    #ea580c;
+      --orange2:   #fb923c;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -39,7 +43,6 @@
       align-items: center;
       gap: 14px;
     }
-
     header .logo {
       width: 36px; height: 36px;
       background: linear-gradient(135deg, var(--accent), var(--accent2));
@@ -47,10 +50,8 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 18px;
     }
-
     header h1 { font-size: 1.3rem; font-weight: 700; }
     header p  { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
-
     .badge {
       margin-left: auto;
       background: var(--surface2);
@@ -61,18 +62,55 @@
       color: var(--muted);
     }
 
-    main {
-      flex: 1;
-      max-width: 900px;
+    /* ── Tab nav ── */
+    .tab-nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      display: flex;
+      gap: 4px;
+    }
+    .tab-btn {
+      padding: 12px 22px;
+      border: none;
+      background: none;
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: color 0.2s, border-color 0.2s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      color: var(--accent2);
+      border-bottom-color: var(--accent2);
+    }
+    .tab-btn.tab-img2vid.active {
+      color: var(--orange2);
+      border-bottom-color: var(--orange2);
+    }
+    .tab-btn.tab-stickman.active {
+      color: var(--green2);
+      border-bottom-color: var(--green2);
+    }
+
+    /* ── Tab panels ── */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Layout ── */
+    .panel-inner {
+      max-width: 960px;
       width: 100%;
       margin: 0 auto;
-      padding: 32px 20px;
+      padding: 28px 20px;
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 24px;
     }
-
-    @media (max-width: 700px) { main { grid-template-columns: 1fr; } }
+    @media (max-width: 700px) { .panel-inner { grid-template-columns: 1fr; } }
 
     .card {
       background: var(--surface);
@@ -80,7 +118,6 @@
       border-radius: var(--radius);
       padding: 24px;
     }
-
     .card h2 {
       font-size: 1rem;
       font-weight: 600;
@@ -90,6 +127,8 @@
       align-items: center;
       gap: 8px;
     }
+    .card.green h2 { color: var(--green2); }
+    .card.orange h2 { color: var(--orange2); }
 
     label {
       display: block;
@@ -100,7 +139,7 @@
     }
     label:first-of-type { margin-top: 0; }
 
-    textarea, input[type="range"], input[type="number"], select {
+    textarea, input[type="text"], input[type="range"], input[type="number"], select {
       width: 100%;
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -112,7 +151,7 @@
       resize: vertical;
       transition: border-color 0.2s;
     }
-    textarea:focus, input[type="number"]:focus {
+    textarea:focus, input[type="text"]:focus, input[type="number"]:focus {
       border-color: var(--accent);
     }
     textarea { min-height: 90px; }
@@ -142,11 +181,10 @@
     .estimate-box strong { color: var(--warning); font-size: 1rem; }
     .estimate-box .detail { margin-top: 4px; font-size: 0.78rem; }
 
-    button#btn-generate {
+    .gen-btn {
       margin-top: 20px;
       width: 100%;
       padding: 13px;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
       color: #fff;
       border: none;
       border-radius: 8px;
@@ -155,13 +193,14 @@
       cursor: pointer;
       transition: opacity 0.2s, transform 0.1s;
     }
-    button#btn-generate:hover:not(:disabled) { opacity: 0.9; }
-    button#btn-generate:active:not(:disabled) { transform: scale(0.98); }
-    button#btn-generate:disabled { opacity: 0.45; cursor: not-allowed; }
+    .gen-btn:hover:not(:disabled) { opacity: 0.9; }
+    .gen-btn:active:not(:disabled) { transform: scale(0.98); }
+    .gen-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .gen-btn.purple { background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+    .gen-btn.green  { background: linear-gradient(135deg, var(--green), var(--green2)); }
+    .gen-btn.orange { background: linear-gradient(135deg, var(--orange), var(--orange2)); }
 
-    /* Progress card */
-    #progress-card { display: none; }
-
+    /* Progress */
     .status-pill {
       display: inline-block;
       padding: 3px 10px;
@@ -172,11 +211,11 @@
       color: var(--muted);
       margin-left: auto;
     }
-    .status-pill.queued       { color: var(--muted); }
-    .status-pill.loading_model{ background: #1e3a5f; color: #60a5fa; }
-    .status-pill.generating   { background: #1e3a5f; color: #60a5fa; }
-    .status-pill.done         { background: #14532d; color: var(--success); }
-    .status-pill.failed       { background: #450a0a; color: var(--error); }
+    .status-pill.queued        { color: var(--muted); }
+    .status-pill.loading_model { background: #1e3a5f; color: #60a5fa; }
+    .status-pill.generating    { background: #1e3a5f; color: #60a5fa; }
+    .status-pill.done          { background: #14532d; color: var(--success); }
+    .status-pill.failed        { background: #450a0a; color: var(--error); }
 
     .prog-bar-wrap {
       background: var(--surface2);
@@ -192,12 +231,13 @@
       transition: width 0.5s ease;
       width: 0%;
     }
+    .prog-bar.green  { background: linear-gradient(90deg, var(--green), var(--green2)); }
+    .prog-bar.orange { background: linear-gradient(90deg, var(--orange), var(--orange2)); }
 
     .prog-meta {
       display: flex; justify-content: space-between;
       font-size: 0.78rem; color: var(--muted); margin-bottom: 10px;
     }
-
     .prog-msg {
       font-size: 0.82rem; color: var(--text);
       margin-top: 8px; line-height: 1.5;
@@ -216,28 +256,15 @@
       padding: 10px;
       text-align: center;
     }
-    .time-cell .val {
-      font-size: 1.1rem; font-weight: 700;
-      color: var(--accent2);
-    }
-    .time-cell .lbl {
-      font-size: 0.72rem; color: var(--muted); margin-top: 3px;
-    }
-
-    /* Video output */
-    #output-card { display: none; }
+    .time-cell .val { font-size: 1.1rem; font-weight: 700; color: var(--accent2); }
+    .time-cell .lbl { font-size: 0.72rem; color: var(--muted); margin-top: 3px; }
 
     video {
       width: 100%; border-radius: 8px;
       background: #000;
       margin-top: 12px;
     }
-
-    .video-meta {
-      margin-top: 10px;
-      font-size: 0.8rem; color: var(--muted);
-    }
-
+    .video-meta { margin-top: 10px; font-size: 0.8rem; color: var(--muted); }
     .dl-btn {
       display: inline-block;
       margin-top: 12px;
@@ -250,9 +277,36 @@
       font-weight: 600;
     }
 
-    /* History */
-    #history-card {
-      grid-column: 1 / -1;
+    /* Image upload area */
+    .img-upload-area {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .img-upload-area:hover { border-color: var(--orange2); background: rgba(234,88,12,0.05); }
+    .img-upload-area input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+      width: 100%; height: 100%;
+    }
+    .img-upload-area .upload-label {
+      font-size: 0.85rem; color: var(--muted); pointer-events: none;
+    }
+    .img-upload-area .upload-label strong { color: var(--orange2); }
+    #i2v-preview {
+      max-width: 100%; max-height: 200px; border-radius: 8px;
+      margin-top: 10px; display: none;
+    }
+
+    /* History (full-width, shared) */
+    .history-wrap {
+      max-width: 960px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 20px 28px;
     }
     .history-list { list-style: none; }
     .history-list li {
@@ -280,6 +334,9 @@
       border-radius: 8px; padding: 10px 14px;
       color: var(--error); font-size: 0.83rem; margin-top: 10px;
     }
+
+    /* hidden utility */
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
@@ -288,132 +345,267 @@
   <div class="logo">▶</div>
   <div>
     <h1>AI Video Generator</h1>
-    <p>Text-to-video · CPU inference · ModelScope 1.7B</p>
+    <p>Text-to-Video · Image-to-Video · Motion Stickman</p>
   </div>
   <span class="badge" id="server-status">● Connecting…</span>
 </header>
 
-<main>
-  <!-- ── Prompt / settings card ──────────────────────────────────────── -->
-  <div class="card" id="prompt-card">
-    <h2>⚡ Generate Video</h2>
+<!-- ── Tab nav ── -->
+<nav class="tab-nav">
+  <button class="tab-btn tab-t2v active"     data-tab="t2v">⚡ Text to Video</button>
+  <button class="tab-btn tab-img2vid"         data-tab="i2v">🖼 Image to Video</button>
+  <button class="tab-btn tab-stickman"        data-tab="stickman">🦾 Motion Stickman</button>
+</nav>
 
-    <label>Prompt</label>
-    <textarea id="prompt" placeholder="A serene mountain lake at sunrise, mist rising over still water, golden light…"></textarea>
+<!-- ═══════════════════════════════════════════════════════════════
+     TAB 1: Text-to-Video  (CogVideoX-5B)
+════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel active" id="tab-t2v">
+  <div class="panel-inner">
 
-    <label>Duration (seconds): <span id="dur-val">5</span></label>
-    <div class="range-row">
-      <input type="range" id="duration" min="2" max="30" value="5" step="1" />
-      <span class="range-val" id="dur-disp">5s</span>
-    </div>
+    <!-- Prompt card -->
+    <div class="card" id="t2v-prompt-card">
+      <h2>⚡ Text to Video <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:6px">CogVideoX-5B</span></h2>
 
-    <label>Inference steps (quality vs speed)</label>
-    <div class="range-row">
-      <input type="range" id="steps" min="5" max="50" value="20" step="5" />
-      <span class="range-val" id="steps-disp">20</span>
-    </div>
+      <label>Title</label>
+      <input type="text" id="t2v-title" placeholder="e.g. mountain-sunrise" />
 
-    <label>FPS output</label>
-    <select id="fps">
-      <option value="6">6 fps (fewer frames, faster)</option>
-      <option value="8" selected>8 fps (default)</option>
-      <option value="12">12 fps (smoother, slower)</option>
-    </select>
+      <label>Prompt</label>
+      <textarea id="t2v-prompt" placeholder="A serene mountain lake at sunrise, mist rising over still water, golden light…"></textarea>
 
-    <div class="estimate-box" id="estimate-box">
-      <span class="spinner"></span> Calculating estimate…
-    </div>
-
-    <button id="btn-generate">Generate Video</button>
-  </div>
-
-  <!-- ── Progress card ──────────────────────────────────────────────── -->
-  <div class="card" id="progress-card">
-    <h2>
-      📊 Progress
-      <span class="status-pill" id="status-pill">queued</span>
-    </h2>
-
-    <div class="prog-bar-wrap">
-      <div class="prog-bar" id="prog-bar"></div>
-    </div>
-    <div class="prog-meta">
-      <span id="prog-pct">0%</span>
-      <span id="prog-frames"></span>
-    </div>
-
-    <div class="time-grid">
-      <div class="time-cell">
-        <div class="val" id="tc-elapsed">—</div>
-        <div class="lbl">Elapsed</div>
+      <label>Duration (seconds): <span id="t2v-dur-val">5</span></label>
+      <div class="range-row">
+        <input type="range" id="t2v-duration" min="2" max="10" value="5" step="1" />
+        <span class="range-val" id="t2v-dur-disp">5s</span>
       </div>
-      <div class="time-cell">
-        <div class="val" id="tc-remaining">—</div>
-        <div class="lbl">Remaining</div>
+
+      <label>Inference steps (quality vs speed)</label>
+      <div class="range-row">
+        <input type="range" id="t2v-steps" min="10" max="50" value="50" step="5" />
+        <span class="range-val" id="t2v-steps-disp">50</span>
       </div>
-      <div class="time-cell">
-        <div class="val" id="tc-estimate">—</div>
-        <div class="lbl">Estimate</div>
+
+      <label>Guidance scale</label>
+      <div class="range-row">
+        <input type="range" id="t2v-guidance" min="1" max="15" value="6" step="0.5" />
+        <span class="range-val" id="t2v-guidance-disp">6</span>
       </div>
+
+      <div class="estimate-box" id="t2v-estimate-box">
+        <span class="spinner"></span> Calculating estimate…
+      </div>
+
+      <button class="gen-btn purple" id="btn-t2v">Generate Video</button>
     </div>
 
-    <div class="prog-msg" id="prog-msg">Waiting to start…</div>
-    <div id="error-box"></div>
-  </div>
-
-  <!-- ── Output card ───────────────────────────────────────────────── -->
-  <div class="card" id="output-card">
-    <h2>🎬 Output</h2>
-    <video id="output-video" controls loop></video>
-    <div class="video-meta" id="video-meta"></div>
-    <a id="dl-link" class="dl-btn" download>⬇ Download MP4</a>
-  </div>
-
-  <!-- ── Stickman card ────────────────────────────────────────────────── -->
-  <div class="card" id="stickman-card">
-    <h2>🦾 Stickman Motion Generator</h2>
-    <p style="font-size:0.8rem;color:var(--muted);margin-bottom:14px">
-      Text → 3D human motion skeleton animation (T2M-GPT · CPU)
-    </p>
-
-    <label>Motion Prompt</label>
-    <textarea id="stickman-prompt" placeholder="a person walks forward, a person jumps, a person waves their hand…" style="min-height:70px"></textarea>
-
-    <p style="font-size:0.76rem;color:var(--muted);margin-top:10px">
-      Best prompts: short human body motion descriptions — walk, run, jump, wave, kick, dance, etc.
-    </p>
-
-    <button id="btn-stickman" style="margin-top:16px;width:100%;padding:13px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:8px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:opacity 0.2s">
-      Generate Stickman Video
-    </button>
-
-    <div id="stickman-progress" style="display:none;margin-top:16px">
+    <!-- Progress card -->
+    <div class="card hidden" id="t2v-progress-card">
+      <h2>
+        📊 Progress
+        <span class="status-pill" id="t2v-status-pill">queued</span>
+      </h2>
       <div class="prog-bar-wrap">
-        <div class="prog-bar" id="stickman-prog-bar" style="background:linear-gradient(90deg,#059669,#10b981)"></div>
+        <div class="prog-bar" id="t2v-prog-bar"></div>
       </div>
-      <div class="prog-msg" id="stickman-msg">Waiting…</div>
+      <div class="prog-meta">
+        <span id="t2v-prog-pct">0%</span>
+        <span id="t2v-prog-frames"></span>
+      </div>
+      <div class="time-grid">
+        <div class="time-cell">
+          <div class="val" id="t2v-tc-elapsed">—</div>
+          <div class="lbl">Elapsed</div>
+        </div>
+        <div class="time-cell">
+          <div class="val" id="t2v-tc-remaining">—</div>
+          <div class="lbl">Remaining</div>
+        </div>
+        <div class="time-cell">
+          <div class="val" id="t2v-tc-estimate">—</div>
+          <div class="lbl">Estimate</div>
+        </div>
+      </div>
+      <div class="prog-msg" id="t2v-prog-msg">Waiting to start…</div>
+      <div id="t2v-error-box"></div>
     </div>
 
-    <div id="stickman-output" style="display:none;margin-top:14px">
-      <video id="stickman-video" controls loop style="width:100%;border-radius:8px;background:#000"></video>
-      <a id="stickman-dl" class="dl-btn" download style="background:#059669;margin-top:10px;display:inline-block">⬇ Download MP4</a>
+    <!-- Output card -->
+    <div class="card hidden" id="t2v-output-card">
+      <h2>🎬 Output</h2>
+      <video id="t2v-output-video" controls loop></video>
+      <div class="video-meta" id="t2v-video-meta"></div>
+      <a id="t2v-dl-link" class="dl-btn" download>⬇ Download MP4</a>
     </div>
-    <div id="stickman-error"></div>
+
   </div>
+</div>
 
-  <!-- ── History card ──────────────────────────────────────────────── -->
+<!-- ═══════════════════════════════════════════════════════════════
+     TAB 2: Image-to-Video  (Stable Video Diffusion)
+════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-i2v">
+  <div class="panel-inner">
+
+    <!-- Input card -->
+    <div class="card orange">
+      <h2>🖼 Image to Video <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:6px">Stable Video Diffusion</span></h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:16px">
+        Upload a still image and animate it into a short video clip.
+      </p>
+
+      <label>Title</label>
+      <input type="text" id="i2v-title" placeholder="e.g. animated-sunset" />
+
+      <label>Source Image</label>
+      <div class="img-upload-area" id="i2v-upload-area">
+        <input type="file" id="i2v-file" accept="image/png,image/jpeg,image/webp" />
+        <div class="upload-label">
+          <strong>Click to upload</strong> or drag & drop<br>
+          <span style="font-size:0.75rem">PNG, JPEG, WebP — will be resized to 1024×576</span>
+        </div>
+        <img id="i2v-preview" alt="preview" />
+      </div>
+
+      <label>Motion intensity</label>
+      <div class="range-row">
+        <input type="range" id="i2v-motion" min="0" max="255" value="127" step="1" />
+        <span class="range-val" id="i2v-motion-disp">127</span>
+      </div>
+
+      <label>Inference steps</label>
+      <div class="range-row">
+        <input type="range" id="i2v-steps" min="10" max="25" value="25" step="5" />
+        <span class="range-val" id="i2v-steps-disp">25</span>
+      </div>
+
+      <label>FPS output</label>
+      <select id="i2v-fps">
+        <option value="6">6 fps</option>
+        <option value="8" selected>8 fps (default)</option>
+        <option value="14">14 fps (SVD native)</option>
+      </select>
+
+      <button class="gen-btn orange" id="btn-i2v" style="margin-top:20px">Animate Image</button>
+    </div>
+
+    <!-- Progress card -->
+    <div class="card hidden" id="i2v-progress-card">
+      <h2 style="color:var(--orange2)">
+        📊 Progress
+        <span class="status-pill" id="i2v-status-pill">queued</span>
+      </h2>
+      <div class="prog-bar-wrap">
+        <div class="prog-bar orange" id="i2v-prog-bar"></div>
+      </div>
+      <div class="prog-meta">
+        <span id="i2v-prog-pct">0%</span>
+      </div>
+      <div class="time-grid">
+        <div class="time-cell">
+          <div class="val" id="i2v-tc-elapsed">—</div>
+          <div class="lbl">Elapsed</div>
+        </div>
+        <div class="time-cell">
+          <div class="val" id="i2v-tc-remaining">—</div>
+          <div class="lbl">Remaining</div>
+        </div>
+        <div class="time-cell">
+          <div class="val" id="i2v-tc-estimate">~3-8m</div>
+          <div class="lbl">Estimate</div>
+        </div>
+      </div>
+      <div class="prog-msg" id="i2v-prog-msg">Waiting to start…</div>
+      <div id="i2v-error-box"></div>
+    </div>
+
+    <!-- Output card -->
+    <div class="card hidden" id="i2v-output-card">
+      <h2 style="color:var(--orange2)">🎬 Output</h2>
+      <video id="i2v-output-video" controls loop></video>
+      <div class="video-meta" id="i2v-video-meta"></div>
+      <a id="i2v-dl-link" class="dl-btn" download>⬇ Download MP4</a>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     TAB 3: Motion Stickman  (MDM)
+════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-stickman">
+  <div class="panel-inner">
+
+    <!-- Input card -->
+    <div class="card green">
+      <h2>🦾 Motion Stickman <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:6px">MDM</span></h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:14px">
+        Text → 3D human skeleton motion animation via Motion Diffusion Model.
+      </p>
+
+      <label>Title</label>
+      <input type="text" id="stickman-title" placeholder="e.g. person-walking" />
+
+      <label>Motion Prompt</label>
+      <textarea id="stickman-prompt" placeholder="a person walks forward and waves their hand…" style="min-height:80px"></textarea>
+
+      <p style="font-size:0.76rem;color:var(--muted);margin-top:10px">
+        Best prompts: short human body motion descriptions — walk, run, jump, wave, kick, dance, sit, etc.
+      </p>
+
+      <button class="gen-btn green" id="btn-stickman" style="margin-top:16px">Generate Motion Video</button>
+    </div>
+
+    <!-- Progress card -->
+    <div class="card hidden" id="stickman-progress-card">
+      <h2 style="color:var(--green2)">
+        📊 Progress
+        <span class="status-pill" id="stickman-status-pill">queued</span>
+      </h2>
+      <div class="prog-bar-wrap">
+        <div class="prog-bar green" id="stickman-prog-bar"></div>
+      </div>
+      <div class="prog-meta">
+        <span id="stickman-prog-pct">0%</span>
+      </div>
+      <div class="prog-msg" id="stickman-prog-msg">Waiting to start…</div>
+      <div id="stickman-error-box"></div>
+    </div>
+
+    <!-- Output card -->
+    <div class="card hidden" id="stickman-output-card">
+      <h2 style="color:var(--green2)">🎬 Output</h2>
+      <video id="stickman-output-video" controls loop></video>
+      <div class="video-meta" id="stickman-video-meta"></div>
+      <a id="stickman-dl-link" class="dl-btn" style="background:var(--green)" download>⬇ Download MP4</a>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Shared history (always visible below tabs) ── -->
+<div class="history-wrap">
   <div class="card" id="history-card">
     <h2>🕑 Recent Jobs</h2>
     <ul class="history-list" id="history-list">
       <li><span style="color:var(--muted);font-size:0.82rem">No jobs yet.</span></li>
     </ul>
   </div>
-</main>
+</div>
 
 <script>
 const API = '';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtSec(s) {
   if (!s || s < 0) return '—';
   s = Math.round(s);
@@ -422,163 +614,318 @@ function fmtSec(s) {
   return r ? `${m}m ${r}s` : `${m}m`;
 }
 
-// ── Range inputs ──────────────────────────────────────────────────────────────
-const durEl    = document.getElementById('duration');
-const stepsEl  = document.getElementById('steps');
-const fpsEl    = document.getElementById('fps');
+function bindRange(rangeId, dispId, suffix='') {
+  const el = document.getElementById(rangeId);
+  const disp = document.getElementById(dispId);
+  el.addEventListener('input', () => { disp.textContent = el.value + suffix; });
+  disp.textContent = el.value + suffix;
+}
 
-durEl.addEventListener('input', () => {
-  document.getElementById('dur-disp').textContent = durEl.value + 's';
-  document.getElementById('dur-val').textContent  = durEl.value;
-  refreshEstimate();
-});
-stepsEl.addEventListener('input', () => {
-  document.getElementById('steps-disp').textContent = stepsEl.value;
-  refreshEstimate();
-});
-fpsEl.addEventListener('change', refreshEstimate);
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 1 — Text-to-Video (CogVideoX)
+// ═══════════════════════════════════════════════════════════════════════════════
+bindRange('t2v-duration', 't2v-dur-disp', 's');
+bindRange('t2v-steps', 't2v-steps-disp');
+bindRange('t2v-guidance', 't2v-guidance-disp');
 
-async function refreshEstimate() {
-  const box = document.getElementById('estimate-box');
+document.getElementById('t2v-duration').addEventListener('input', () => {
+  document.getElementById('t2v-dur-val').textContent = document.getElementById('t2v-duration').value;
+  refreshT2vEstimate();
+});
+document.getElementById('t2v-steps').addEventListener('input', refreshT2vEstimate);
+
+async function refreshT2vEstimate() {
+  const box = document.getElementById('t2v-estimate-box');
   box.innerHTML = '<span class="spinner"></span> Calculating…';
   try {
     const res = await fetch(`${API}/api/estimate`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        duration_seconds: parseFloat(durEl.value),
-        fps: parseInt(fpsEl.value),
-        num_steps: parseInt(stepsEl.value),
+        duration_seconds: parseFloat(document.getElementById('t2v-duration').value),
+        fps: 8,
+        num_steps: parseInt(document.getElementById('t2v-steps').value),
+        model: 'cogvideox',
       }),
     });
     const d = await res.json();
-    document.getElementById('tc-estimate').textContent = d.display;
+    document.getElementById('t2v-tc-estimate').textContent = d.display;
     box.innerHTML = `
       <strong>${d.display}</strong>
-      <div class="detail">${d.frames} frames · ${d.steps} steps · CPU inference</div>
-      <div class="detail" style="margin-top:4px;color:#f59e0b">⚠ CPU-only: generation will be slow. Plan accordingly.</div>
+      <div class="detail">${d.frames} frames · ${d.steps} steps · ${d.device.toUpperCase()}</div>
     `;
   } catch(e) {
     box.textContent = 'Could not fetch estimate.';
   }
 }
+refreshT2vEstimate();
 
-refreshEstimate();   // initial
-
-// ── Generation ────────────────────────────────────────────────────────────────
-let pollTimer = null;
-let currentJob = null;
-
-document.getElementById('btn-generate').addEventListener('click', async () => {
-  const prompt = document.getElementById('prompt').value.trim();
+let t2vPollTimer = null;
+document.getElementById('btn-t2v').addEventListener('click', async () => {
+  const prompt = document.getElementById('t2v-prompt').value.trim();
+  const title  = document.getElementById('t2v-title').value.trim();
   if (!prompt) { alert('Please enter a prompt.'); return; }
 
-  const btn = document.getElementById('btn-generate');
-  btn.disabled = true;
-  btn.textContent = 'Starting…';
+  const btn = document.getElementById('btn-t2v');
+  btn.disabled = true; btn.textContent = 'Starting…';
+  if (t2vPollTimer) clearInterval(t2vPollTimer);
 
-  if (pollTimer) clearInterval(pollTimer);
-
-  // reset UI
-  document.getElementById('output-card').style.display  = 'none';
-  document.getElementById('error-box').innerHTML = '';
-  document.getElementById('prog-bar').style.width = '0%';
-  document.getElementById('prog-pct').textContent = '0%';
-  document.getElementById('prog-msg').textContent = 'Queued…';
-  setPill('queued');
-
-  document.getElementById('progress-card').style.display = 'block';
+  document.getElementById('t2v-output-card').classList.add('hidden');
+  document.getElementById('t2v-error-box').innerHTML = '';
+  document.getElementById('t2v-prog-bar').style.width = '0%';
+  document.getElementById('t2v-prog-pct').textContent = '0%';
+  document.getElementById('t2v-prog-msg').textContent = 'Queued…';
+  setT2vPill('queued');
+  document.getElementById('t2v-progress-card').classList.remove('hidden');
 
   try {
     const res = await fetch(`${API}/api/generate`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        prompt,
-        duration_seconds: parseFloat(durEl.value),
-        fps: parseInt(fpsEl.value),
-        num_steps: parseInt(stepsEl.value),
+        prompt, title,
+        duration_seconds: parseFloat(document.getElementById('t2v-duration').value),
+        fps: 8,
+        num_steps: parseInt(document.getElementById('t2v-steps').value),
+        guidance_scale: parseFloat(document.getElementById('t2v-guidance').value),
+        model: 'cogvideox',
       }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');
 
-    currentJob = data.job_id;
-    document.getElementById('tc-estimate').textContent = data.estimate.display;
-    document.getElementById('prog-frames').textContent = `${data.estimate.frames} frames`;
-
+    document.getElementById('t2v-tc-estimate').textContent = data.estimate ? data.estimate.display : '—';
+    document.getElementById('t2v-prog-frames').textContent = data.estimate ? `${data.estimate.frames} frames` : '';
     btn.textContent = 'Generating…';
-    pollTimer = setInterval(() => pollJob(currentJob), 2000);
-
+    t2vPollTimer = setInterval(() => pollT2v(data.job_id), 2000);
   } catch(e) {
-    showError(e.message);
-    btn.disabled = false;
-    btn.textContent = 'Generate Video';
+    document.getElementById('t2v-error-box').innerHTML = `<div class="error-msg">⚠ ${e.message}</div>`;
+    btn.disabled = false; btn.textContent = 'Generate Video';
   }
 });
 
-function setPill(status) {
-  const pill = document.getElementById('status-pill');
+function setT2vPill(status) {
+  const pill = document.getElementById('t2v-status-pill');
   pill.className = 'status-pill ' + status;
   pill.textContent = status.replace('_', ' ');
 }
 
-async function pollJob(jobId) {
+async function pollT2v(jobId) {
   try {
     const res = await fetch(`${API}/api/status/${jobId}`);
     const job = await res.json();
-    updateProgress(job);
 
-    if (job.status === 'done' || job.status === 'failed') {
-      clearInterval(pollTimer);
-      const btn = document.getElementById('btn-generate');
-      btn.disabled = false;
-      btn.textContent = 'Generate Video';
+    setT2vPill(job.status);
+    const pct = job.progress || 0;
+    document.getElementById('t2v-prog-bar').style.width  = pct + '%';
+    document.getElementById('t2v-prog-pct').textContent  = pct + '%';
+    document.getElementById('t2v-prog-msg').textContent  = job.message || '';
+    document.getElementById('t2v-tc-elapsed').textContent   = fmtSec(job.elapsed_seconds);
+    document.getElementById('t2v-tc-remaining').textContent = fmtSec(job.remaining_seconds);
+
+    if (job.status === 'done' && job.video_file) {
+      clearInterval(t2vPollTimer);
+      document.getElementById('btn-t2v').disabled = false;
+      document.getElementById('btn-t2v').textContent = 'Generate Video';
+      const url = `${API}/api/video/${job.video_file}`;
+      document.getElementById('t2v-output-video').src = url;
+      document.getElementById('t2v-dl-link').href = url;
+      document.getElementById('t2v-dl-link').download = job.video_file;
+      document.getElementById('t2v-video-meta').textContent = `${job.elapsed_seconds}s generation · ${job.prompt}`;
+      document.getElementById('t2v-output-card').classList.remove('hidden');
       refreshHistory();
     }
+    if (job.status === 'failed') {
+      clearInterval(t2vPollTimer);
+      document.getElementById('btn-t2v').disabled = false;
+      document.getElementById('btn-t2v').textContent = 'Generate Video';
+      document.getElementById('t2v-error-box').innerHTML = `<div class="error-msg">⚠ ${job.error || 'Generation failed.'}</div>`;
+      refreshHistory();
+    }
+  } catch(e) { console.warn('T2V poll error:', e); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 2 — Image-to-Video (Stable Video Diffusion)
+// ═══════════════════════════════════════════════════════════════════════════════
+bindRange('i2v-motion', 'i2v-motion-disp');
+bindRange('i2v-steps', 'i2v-steps-disp');
+
+// Image preview
+document.getElementById('i2v-file').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const img = document.getElementById('i2v-preview');
+    img.src = ev.target.result;
+    img.style.display = 'block';
+    document.querySelector('.img-upload-area .upload-label').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+});
+
+let i2vPollTimer = null;
+document.getElementById('btn-i2v').addEventListener('click', async () => {
+  const file = document.getElementById('i2v-file').files[0];
+  if (!file) { alert('Please upload an image first.'); return; }
+  const title = document.getElementById('i2v-title').value.trim();
+
+  const btn = document.getElementById('btn-i2v');
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  if (i2vPollTimer) clearInterval(i2vPollTimer);
+
+  document.getElementById('i2v-output-card').classList.add('hidden');
+  document.getElementById('i2v-error-box').innerHTML = '';
+  document.getElementById('i2v-prog-bar').style.width = '0%';
+  document.getElementById('i2v-prog-pct').textContent = '0%';
+  document.getElementById('i2v-prog-msg').textContent = 'Uploading image…';
+  setI2vPill('queued');
+  document.getElementById('i2v-progress-card').classList.remove('hidden');
+
+  try {
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('title', title);
+    formData.append('motion_bucket_id', document.getElementById('i2v-motion').value);
+    formData.append('num_steps', document.getElementById('i2v-steps').value);
+    formData.append('fps', document.getElementById('i2v-fps').value);
+
+    const res = await fetch(`${API}/api/generate_i2v`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+    btn.textContent = 'Animating…';
+    i2vPollTimer = setInterval(() => pollI2v(data.job_id), 2000);
   } catch(e) {
-    console.warn('Poll error:', e);
+    document.getElementById('i2v-error-box').innerHTML = `<div class="error-msg">⚠ ${e.message}</div>`;
+    btn.disabled = false; btn.textContent = 'Animate Image';
   }
+});
+
+function setI2vPill(status) {
+  const pill = document.getElementById('i2v-status-pill');
+  pill.className = 'status-pill ' + status;
+  pill.textContent = status.replace('_', ' ');
 }
 
-function updateProgress(job) {
-  setPill(job.status);
+async function pollI2v(jobId) {
+  try {
+    const res = await fetch(`${API}/api/status/${jobId}`);
+    const job = await res.json();
 
-  const pct = job.progress || 0;
-  document.getElementById('prog-bar').style.width  = pct + '%';
-  document.getElementById('prog-pct').textContent  = pct + '%';
-  document.getElementById('prog-msg').textContent  = job.message || '';
-  document.getElementById('tc-elapsed').textContent   = fmtSec(job.elapsed_seconds);
-  document.getElementById('tc-remaining').textContent = fmtSec(job.remaining_seconds);
+    setI2vPill(job.status);
+    const pct = job.progress || 0;
+    document.getElementById('i2v-prog-bar').style.width  = pct + '%';
+    document.getElementById('i2v-prog-pct').textContent  = pct + '%';
+    document.getElementById('i2v-prog-msg').textContent  = job.message || '';
+    document.getElementById('i2v-tc-elapsed').textContent   = fmtSec(job.elapsed_seconds);
+    document.getElementById('i2v-tc-remaining').textContent = fmtSec(job.remaining_seconds);
 
-  if (job.status === 'done' && job.video_file) {
-    showVideo(job);
+    if (job.status === 'done' && job.video_file) {
+      clearInterval(i2vPollTimer);
+      document.getElementById('btn-i2v').disabled = false;
+      document.getElementById('btn-i2v').textContent = 'Animate Image';
+      const url = `${API}/api/video/${job.video_file}`;
+      document.getElementById('i2v-output-video').src = url;
+      document.getElementById('i2v-dl-link').href = url;
+      document.getElementById('i2v-dl-link').download = job.video_file;
+      document.getElementById('i2v-video-meta').textContent = `${job.elapsed_seconds}s generation time`;
+      document.getElementById('i2v-output-card').classList.remove('hidden');
+      refreshHistory();
+    }
+    if (job.status === 'failed') {
+      clearInterval(i2vPollTimer);
+      document.getElementById('btn-i2v').disabled = false;
+      document.getElementById('btn-i2v').textContent = 'Animate Image';
+      document.getElementById('i2v-error-box').innerHTML = `<div class="error-msg">⚠ ${job.error || 'Generation failed.'}</div>`;
+      refreshHistory();
+    }
+  } catch(e) { console.warn('I2V poll error:', e); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 3 — Motion Stickman (MDM)
+// ═══════════════════════════════════════════════════════════════════════════════
+let stickmanPollTimer = null;
+
+document.getElementById('btn-stickman').addEventListener('click', async () => {
+  const prompt = document.getElementById('stickman-prompt').value.trim();
+  const title  = document.getElementById('stickman-title').value.trim();
+  if (!prompt) { alert('Please enter a motion prompt.'); return; }
+
+  const btn = document.getElementById('btn-stickman');
+  btn.disabled = true; btn.textContent = 'Starting…';
+  if (stickmanPollTimer) clearInterval(stickmanPollTimer);
+
+  document.getElementById('stickman-output-card').classList.add('hidden');
+  document.getElementById('stickman-error-box').innerHTML = '';
+  document.getElementById('stickman-prog-bar').style.width = '0%';
+  document.getElementById('stickman-prog-pct').textContent = '0%';
+  document.getElementById('stickman-prog-msg').textContent = 'Queued…';
+  setStickmanPill('queued');
+  document.getElementById('stickman-progress-card').classList.remove('hidden');
+
+  try {
+    const res = await fetch(`${API}/api/generate_stickman`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ prompt, title }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+    btn.textContent = 'Generating…';
+    stickmanPollTimer = setInterval(() => pollStickman(data.job_id), 2000);
+  } catch(e) {
+    document.getElementById('stickman-error-box').innerHTML = `<div class="error-msg">⚠ ${e.message}</div>`;
+    btn.disabled = false; btn.textContent = 'Generate Motion Video';
   }
-  if (job.status === 'failed') {
-    showError(job.error || 'Generation failed.');
-  }
+});
+
+function setStickmanPill(status) {
+  const pill = document.getElementById('stickman-status-pill');
+  pill.className = 'status-pill ' + status;
+  pill.textContent = status.replace('_', ' ');
 }
 
-function showVideo(job) {
-  const card  = document.getElementById('output-card');
-  const video = document.getElementById('output-video');
-  const dl    = document.getElementById('dl-link');
-  const meta  = document.getElementById('video-meta');
+async function pollStickman(jobId) {
+  try {
+    const res = await fetch(`${API}/api/status/${jobId}`);
+    const job = await res.json();
 
-  const url = `${API}/api/video/${job.video_file}`;
-  video.src = url;
-  dl.href   = url;
-  dl.download = job.video_file;
-  meta.textContent = `${job.num_frames} frames · ${job.elapsed_seconds}s generation time · ${job.prompt}`;
-  card.style.display = 'block';
+    setStickmanPill(job.status);
+    const pct = job.progress || 0;
+    document.getElementById('stickman-prog-bar').style.width  = pct + '%';
+    document.getElementById('stickman-prog-pct').textContent  = pct + '%';
+    document.getElementById('stickman-prog-msg').textContent  = job.message || '';
+
+    if (job.status === 'done' && job.video_file) {
+      clearInterval(stickmanPollTimer);
+      document.getElementById('btn-stickman').disabled = false;
+      document.getElementById('btn-stickman').textContent = 'Generate Motion Video';
+      const url = `${API}/api/video/${job.video_file}`;
+      document.getElementById('stickman-output-video').src = url;
+      document.getElementById('stickman-dl-link').href = url;
+      document.getElementById('stickman-dl-link').download = job.video_file;
+      document.getElementById('stickman-video-meta').textContent = `${job.message}`;
+      document.getElementById('stickman-output-card').classList.remove('hidden');
+      refreshHistory();
+    }
+    if (job.status === 'failed') {
+      clearInterval(stickmanPollTimer);
+      document.getElementById('btn-stickman').disabled = false;
+      document.getElementById('btn-stickman').textContent = 'Generate Motion Video';
+      document.getElementById('stickman-error-box').innerHTML = `<div class="error-msg">⚠ ${job.error || 'Generation failed.'}</div>`;
+      refreshHistory();
+    }
+  } catch(e) { console.warn('Stickman poll error:', e); }
 }
 
-function showError(msg) {
-  document.getElementById('error-box').innerHTML =
-    `<div class="error-msg">⚠ ${msg}</div>`;
-}
-
-// ── History ───────────────────────────────────────────────────────────────────
+// ── Shared history ─────────────────────────────────────────────────────────────
 async function refreshHistory() {
   try {
     const res  = await fetch(`${API}/api/jobs`);
@@ -588,82 +935,14 @@ async function refreshHistory() {
     ul.innerHTML = jobs.map(j => `
       <li>
         <span class="status-pill ${j.status}">${j.status.replace('_',' ')}</span>
-        <span class="h-prompt">${j.prompt.slice(0, 80)}${j.prompt.length > 80 ? '…' : ''}</span>
-        <span class="h-meta">${j.num_frames}fr · ${fmtSec(j.elapsed_seconds)}</span>
+        <span class="h-prompt">${(j.prompt||j.title||'').slice(0,80)}${(j.prompt||'').length > 80 ? '…' : ''}</span>
+        <span class="h-meta">${j.type || 't2v'} · ${fmtSec(j.elapsed_seconds)}</span>
         ${j.video_file
           ? `<a href="/api/video/${j.video_file}" style="color:var(--success);font-size:0.78rem;" target="_blank">▶ Play</a>`
           : ''}
       </li>
     `).join('');
   } catch(e) {}
-}
-
-// ── Stickman generation ───────────────────────────────────────────────────────
-let stickmanPollTimer = null;
-
-document.getElementById('btn-stickman').addEventListener('click', async () => {
-  const prompt = document.getElementById('stickman-prompt').value.trim();
-  if (!prompt) { alert('Please enter a motion prompt.'); return; }
-
-  const btn = document.getElementById('btn-stickman');
-  btn.disabled = true;
-  btn.textContent = 'Starting…';
-
-  if (stickmanPollTimer) clearInterval(stickmanPollTimer);
-
-  document.getElementById('stickman-output').style.display = 'none';
-  document.getElementById('stickman-error').innerHTML = '';
-  document.getElementById('stickman-prog-bar').style.width = '0%';
-  document.getElementById('stickman-msg').textContent = 'Queued…';
-  document.getElementById('stickman-progress').style.display = 'block';
-
-  try {
-    const res = await fetch(`${API}/api/generate_stickman`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ prompt }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Unknown error');
-
-    btn.textContent = 'Generating…';
-    stickmanPollTimer = setInterval(() => pollStickman(data.job_id), 2000);
-  } catch(e) {
-    document.getElementById('stickman-error').innerHTML = `<div class="error-msg">⚠ ${e.message}</div>`;
-    btn.disabled = false;
-    btn.textContent = 'Generate Stickman Video';
-  }
-});
-
-async function pollStickman(jobId) {
-  try {
-    const res = await fetch(`${API}/api/status/${jobId}`);
-    const job = await res.json();
-
-    document.getElementById('stickman-prog-bar').style.width = (job.progress || 0) + '%';
-    document.getElementById('stickman-msg').textContent = job.message || '';
-
-    if (job.status === 'done') {
-      clearInterval(stickmanPollTimer);
-      const btn = document.getElementById('btn-stickman');
-      btn.disabled = false;
-      btn.textContent = 'Generate Stickman Video';
-
-      const url = `${API}/api/video/${job.video_file}`;
-      document.getElementById('stickman-video').src = url;
-      document.getElementById('stickman-dl').href = url;
-      document.getElementById('stickman-dl').download = job.video_file;
-      document.getElementById('stickman-output').style.display = 'block';
-    }
-    if (job.status === 'failed') {
-      clearInterval(stickmanPollTimer);
-      document.getElementById('btn-stickman').disabled = false;
-      document.getElementById('btn-stickman').textContent = 'Generate Stickman Video';
-      document.getElementById('stickman-error').innerHTML = `<div class="error-msg">⚠ ${job.error || 'Generation failed.'}</div>`;
-    }
-  } catch(e) {
-    console.warn('Stickman poll error:', e);
-  }
 }
 
 // ── Server status ─────────────────────────────────────────────────────────────
