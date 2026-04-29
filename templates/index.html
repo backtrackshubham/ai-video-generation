@@ -365,7 +365,16 @@
 
     <!-- Prompt card -->
     <div class="card" id="t2v-prompt-card">
-      <h2>⚡ Text to Video <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:6px">CogVideoX-5B</span></h2>
+      <h2>⚡ Text to Video <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:6px" id="t2v-model-label">CogVideoX-5B</span></h2>
+
+      <label>Model</label>
+      <select id="t2v-model">
+        <option value="cogvideox">CogVideoX-5B — high quality (GPU recommended, ~22 GB)</option>
+        <option value="modelscope">ModelScope 1.7B — fast &amp; CPU-friendly (~3.5 GB)</option>
+      </select>
+      <div id="t2v-model-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
+        Best on GPU with 16+ GB VRAM. On CPU expect very long generation times.
+      </div>
 
       <label>Title</label>
       <input type="text" id="t2v-title" placeholder="e.g. mountain-sunrise" />
@@ -622,11 +631,27 @@ function bindRange(rangeId, dispId, suffix='') {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TAB 1 — Text-to-Video (CogVideoX)
+// TAB 1 — Text-to-Video (CogVideoX / ModelScope)
 // ═══════════════════════════════════════════════════════════════════════════════
 bindRange('t2v-duration', 't2v-dur-disp', 's');
 bindRange('t2v-steps', 't2v-steps-disp');
 bindRange('t2v-guidance', 't2v-guidance-disp');
+
+const MODEL_NOTES = {
+  cogvideox:   'Best on GPU with 16+ GB VRAM. On CPU expect very long generation times.',
+  modelscope:  'CPU-friendly (~3.5 GB). Good for testing. Lower quality than CogVideoX.',
+};
+const MODEL_LABELS = {
+  cogvideox:  'CogVideoX-5B',
+  modelscope: 'ModelScope 1.7B',
+};
+
+document.getElementById('t2v-model').addEventListener('change', () => {
+  const m = document.getElementById('t2v-model').value;
+  document.getElementById('t2v-model-label').textContent = MODEL_LABELS[m] || m;
+  document.getElementById('t2v-model-note').textContent  = MODEL_NOTES[m] || '';
+  refreshT2vEstimate();
+});
 
 document.getElementById('t2v-duration').addEventListener('input', () => {
   document.getElementById('t2v-dur-val').textContent = document.getElementById('t2v-duration').value;
@@ -635,7 +660,8 @@ document.getElementById('t2v-duration').addEventListener('input', () => {
 document.getElementById('t2v-steps').addEventListener('input', refreshT2vEstimate);
 
 async function refreshT2vEstimate() {
-  const box = document.getElementById('t2v-estimate-box');
+  const box   = document.getElementById('t2v-estimate-box');
+  const model = document.getElementById('t2v-model').value;
   box.innerHTML = '<span class="spinner"></span> Calculating…';
   try {
     const res = await fetch(`${API}/api/estimate`, {
@@ -645,14 +671,14 @@ async function refreshT2vEstimate() {
         duration_seconds: parseFloat(document.getElementById('t2v-duration').value),
         fps: 8,
         num_steps: parseInt(document.getElementById('t2v-steps').value),
-        model: 'cogvideox',
+        model,
       }),
     });
     const d = await res.json();
     document.getElementById('t2v-tc-estimate').textContent = d.display;
     box.innerHTML = `
       <strong>${d.display}</strong>
-      <div class="detail">${d.frames} frames · ${d.steps} steps · ${d.device.toUpperCase()}</div>
+      <div class="detail">${d.frames} frames · ${d.steps} steps · ${d.device.toUpperCase()} · ${MODEL_LABELS[model] || model}</div>
     `;
   } catch(e) {
     box.textContent = 'Could not fetch estimate.';
@@ -688,7 +714,7 @@ document.getElementById('btn-t2v').addEventListener('click', async () => {
         fps: 8,
         num_steps: parseInt(document.getElementById('t2v-steps').value),
         guidance_scale: parseFloat(document.getElementById('t2v-guidance').value),
-        model: 'cogvideox',
+        model: document.getElementById('t2v-model').value,
       }),
     });
     const data = await res.json();

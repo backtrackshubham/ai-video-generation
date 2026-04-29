@@ -2,18 +2,16 @@
 AI Video Generation Backend
 Flask service supporting three generation modes:
 
-1. Text-to-Video  — CogVideoX-5B
-   POST /api/generate          { prompt, title, duration_seconds, fps, num_steps, guidance_scale }
+1. Text-to-Video  — CogVideoX-5B  (GPU recommended, ~22 GB)
+                  — ModelScope 1.7B (CPU-friendly, ~3.5 GB)
+   POST /api/generate          { prompt, title, duration_seconds, fps, num_steps, guidance_scale, model }
+   model: "cogvideox" | "modelscope"
 
 2. Image-to-Video — Stable Video Diffusion 1.1
    POST /api/generate_i2v      multipart/form-data: image, title, motion_bucket_id, num_steps, fps
 
 3. Motion Stickman — MDM (Motion Diffusion Model)
    POST /api/generate_stickman { prompt, title }
-
-Branches:
-  master              — CPU-only, Linux, hardcoded /localdisk/ciena/ paths
-  feature/cuda-windows — CUDA-enabled, Windows, fully portable (this file)
 """
 
 import os
@@ -99,15 +97,19 @@ CORS(app)
 jobs: dict = {}
 
 # ── Time estimation ───────────────────────────────────────────────────────────
-# CogVideoX-5B: ~3-4 s/step on A100 (80GB), ~8-12 s/step on RTX 3090 (24GB)
-# CPU: very slow, not really practical
-SECS_PER_STEP_COG = 8 if DEVICE == "cuda" else 120   # per diffusion step
+# CogVideoX-5B:   ~3-4 s/step on A100 (80GB), ~8-12 s/step on RTX 3090 (24GB)
+# ModelScope 1.7B: ~2 s/frame on GPU, ~40 s/frame on CPU @ 20 steps
+SECS_PER_STEP_COG         = 8  if DEVICE == "cuda" else 120   # per diffusion step
+SECS_PER_FRAME_MODELSCOPE = 2  if DEVICE == "cuda" else 40    # per frame @ 20 steps
 
 
 def estimate_time(num_frames: int, num_steps: int, model: str = "cogvideox") -> dict:
     if model == "cogvideox":
         # CogVideoX denoises across all frames simultaneously (not per-frame)
         total_seconds = num_steps * SECS_PER_STEP_COG
+    elif model == "modelscope":
+        # ModelScope generates frame by frame, scaled by actual step count
+        total_seconds = num_frames * num_steps * (SECS_PER_FRAME_MODELSCOPE / 20)
     else:
         total_seconds = num_frames * num_steps * (2 / 20) if DEVICE == "cuda" else num_frames * num_steps * 2
 
@@ -252,7 +254,115 @@ def run_generation(job_id: str, prompt: str, num_frames: int, num_steps: int,
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# IMAGE-TO-VIDEO — Stable Video Diffusion 1.1
+# TEXT-TO-VIDEO — ModelScope 1.7B  (CPU-friendly fallback)
+# ═══════════════════════════════════════════════════════════════════════════════
+_modelscope_pipeline = None
+_modelscope_lock     = threading.Lock()
+
+MODELSCOPE_MODEL_ID = "damo-vilab/text-to-video-ms-1.7b"
+
+
+def get_modelscope_pipeline():
+    global _modelscope_pipeline
+    if _modelscope_pipeline is not None:
+        return _modelscope_pipeline
+    with _modelscope_lock:
+        if _modelscope_pipeline is not None:
+            return _modelscope_pipeline
+        log.info(f"Loading ModelScope 1.7B pipeline ({DEVICE.upper()})…")
+        try:
+            from diffusers import DiffusionPipeline
+            from diffusers.utils import export_to_video
+
+            dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+            pipe = DiffusionPipeline.from_pretrained(
+                MODELSCOPE_MODEL_ID,
+                cache_dir=str(MODEL_DIR / "hf_cache"),
+                torch_dtype=dtype,
+                trust_remote_code=True,
+            )
+            pipe = pipe.to(DEVICE)
+            _modelscope_pipeline = pipe
+            log.info("ModelScope 1.7B loaded successfully.")
+        except Exception as e:
+            log.error(f"Failed to load ModelScope pipeline: {e}")
+            raise
+    return _modelscope_pipeline
+
+
+def run_modelscope_generation(job_id: str, prompt: str, num_frames: int,
+                               num_steps: int, guidance_scale: float, slug: str):
+    jlog = make_job_logger(slug, LOG_VIDEO_DIR)
+    jlog.info(f"[{job_id}] Starting ModelScope T2V | prompt='{prompt}' frames={num_frames} steps={num_steps}")
+
+    try:
+        import imageio
+        import numpy as np
+    except Exception as e:
+        jobs[job_id].update(status="failed", error=str(e), message=f"Import failed: {e}")
+        return
+
+    jobs[job_id].update(status="loading_model", message="Loading ModelScope 1.7B…", progress=2)
+
+    try:
+        pipe = get_modelscope_pipeline()
+    except Exception as e:
+        jobs[job_id].update(status="failed", error=str(e), message=f"Model load failed: {e}")
+        jlog.error(f"[{job_id}] Model load failed: {e}")
+        return
+
+    jobs[job_id].update(status="generating", message="Generating frames…", progress=5)
+    start_time = time.time()
+    step_ref = [0]
+
+    def step_callback(pipe_obj, step, timestep, callback_kwargs):
+        step_ref[0] = step + 1
+        pct = 5 + int((step_ref[0] / num_steps) * 90)
+        elapsed   = time.time() - start_time
+        per_step  = elapsed / step_ref[0] if step_ref[0] else 0
+        remaining = per_step * (num_steps - step_ref[0])
+        jobs[job_id].update(
+            progress=pct,
+            elapsed_seconds=int(elapsed),
+            remaining_seconds=int(remaining),
+            message=f"Step {step_ref[0]}/{num_steps} — elapsed {int(elapsed)}s, ~{int(remaining)}s remaining",
+        )
+        jlog.info(f"[{job_id}] Step {step_ref[0]}/{num_steps} elapsed={int(elapsed)}s")
+        return callback_kwargs
+
+    try:
+        with torch.no_grad():
+            output = pipe(
+                prompt,
+                num_frames=num_frames,
+                num_inference_steps=num_steps,
+                guidance_scale=guidance_scale,
+                callback_on_step_end=step_callback,
+                callback_on_step_end_tensor_inputs=["latents"],
+            )
+
+        frames = output.frames[0]
+        frames_np = [np.array(f) if hasattr(f, "tobytes") else f for f in frames]
+
+        video_filename = f"{slug}.mp4"
+        out_path = OUTPUT_VIDEO_DIR / video_filename
+        imageio.mimwrite(str(out_path), frames_np, fps=8, codec="libx264", quality=8)
+
+        elapsed_total = int(time.time() - start_time)
+        jobs[job_id].update(
+            status="done", progress=100,
+            video_file=video_filename,
+            message=f"Done in {elapsed_total}s — {len(frames_np)} frames",
+            elapsed_seconds=elapsed_total,
+        )
+        jlog.info(f"[{job_id}] ModelScope complete in {elapsed_total}s: {out_path}")
+
+    except Exception as e:
+        jlog.error(f"[{job_id}] ModelScope generation error: {e}", exc_info=True)
+        jobs[job_id].update(status="failed", error=str(e), message=f"Generation failed: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # ═══════════════════════════════════════════════════════════════════════════════
 _svd_pipeline = None
 _svd_lock     = threading.Lock()
@@ -559,9 +669,17 @@ def api_estimate():
     duration  = float(data.get("duration_seconds", 5))
     fps       = int(data.get("fps", 8))
     num_steps = int(data.get("num_steps", 50))
-    model     = data.get("model", "cogvideox")
-    # CogVideoX generates at ~8fps natively (49 frames for 6s)
-    num_frames = max(8, min(int(duration * fps), 49))
+    model     = data.get("model", "cogvideox").lower().strip()
+    if model not in ("cogvideox", "modelscope"):
+        model = "cogvideox"
+
+    if model == "cogvideox":
+        raw = int(duration * fps)
+        num_frames = min(max(raw, 8), 49)
+        num_frames = ((num_frames - 1) // 8) * 8 + 1
+    else:
+        num_frames = min(max(int(duration * fps), 8), 24)
+
     est = estimate_time(num_frames, num_steps, model)
     est["num_frames"] = num_frames
     return jsonify(est)
@@ -576,23 +694,31 @@ def api_generate():
     fps            = int(data.get("fps", 8))
     num_steps      = int(data.get("num_steps", 50))
     guidance_scale = float(data.get("guidance_scale", 6.0))
+    model          = data.get("model", "cogvideox").lower().strip()
+
+    if model not in ("cogvideox", "modelscope"):
+        model = "cogvideox"
 
     if not prompt:
         return jsonify({"error": "prompt is required"}), 400
 
-    # CogVideoX: must be multiple of 8 + 1 (e.g. 49 frames)
-    raw_frames = int(duration * fps)
-    num_frames = min(max(raw_frames, 8), 49)
-    # snap to valid CogVideoX frame count (8k+1)
-    num_frames = ((num_frames - 1) // 8) * 8 + 1
+    if model == "cogvideox":
+        # CogVideoX: must be multiple of 8 + 1 (e.g. 49 frames)
+        raw_frames = int(duration * fps)
+        num_frames = min(max(raw_frames, 8), 49)
+        num_frames = ((num_frames - 1) // 8) * 8 + 1
+    else:
+        # ModelScope: 16 frames is standard; clamp to 8-24
+        num_frames = min(max(int(duration * fps), 8), 24)
 
     job_id = str(uuid.uuid4())
     slug   = slugify(title) if title else f"video-{job_id[:8]}"
-    est    = estimate_time(num_frames, num_steps, "cogvideox")
+    est    = estimate_time(num_frames, num_steps, model)
 
     jobs[job_id] = {
         "job_id":            job_id,
         "type":              "t2v",
+        "model":             model,
         "status":            "queued",
         "progress":          0,
         "message":           "Queued…",
@@ -609,14 +735,19 @@ def api_generate():
         "created_at":        time.time(),
     }
 
+    if model == "cogvideox":
+        target = run_generation
+    else:
+        target = run_modelscope_generation
+
     t = threading.Thread(
-        target=run_generation,
+        target=target,
         args=(job_id, prompt, num_frames, num_steps, guidance_scale, slug),
         daemon=True,
     )
     t.start()
 
-    log.info(f"[{job_id}] T2V started: slug='{slug}' frames={num_frames} steps={num_steps} cfg={guidance_scale}")
+    log.info(f"[{job_id}] T2V started: model={model} slug='{slug}' frames={num_frames} steps={num_steps} cfg={guidance_scale}")
     return jsonify({"job_id": job_id, "estimate": est}), 202
 
 
