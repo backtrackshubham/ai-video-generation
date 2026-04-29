@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Video Generator</title>
+  <style>
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --surface2:  #22263a;
+      --accent:    #6c63ff;
+      --accent2:   #a78bfa;
+      --success:   #22c55e;
+      --warning:   #f59e0b;
+      --error:     #ef4444;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --border:    #2d3148;
+      --radius:    12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    header .logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+
+    header h1 { font-size: 1.3rem; font-weight: 700; }
+    header p  { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+    .badge {
+      margin-left: auto;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    main {
+      flex: 1;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 32px 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 700px) { main { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+    }
+
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 18px;
+      color: var(--accent2);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      margin-top: 16px;
+    }
+    label:first-of-type { margin-top: 0; }
+
+    textarea, input[type="range"], input[type="number"], select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 0.9rem;
+      outline: none;
+      resize: vertical;
+      transition: border-color 0.2s;
+    }
+    textarea:focus, input[type="number"]:focus {
+      border-color: var(--accent);
+    }
+    textarea { min-height: 90px; }
+
+    .range-row {
+      display: flex; align-items: center; gap: 10px;
+    }
+    input[type="range"] {
+      padding: 0; flex: 1; cursor: pointer;
+      accent-color: var(--accent);
+    }
+    .range-val {
+      min-width: 36px; text-align: right;
+      font-size: 0.85rem; color: var(--accent2); font-weight: 600;
+    }
+
+    .estimate-box {
+      margin-top: 16px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      min-height: 48px;
+    }
+    .estimate-box strong { color: var(--warning); font-size: 1rem; }
+    .estimate-box .detail { margin-top: 4px; font-size: 0.78rem; }
+
+    button#btn-generate {
+      margin-top: 20px;
+      width: 100%;
+      padding: 13px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    button#btn-generate:hover:not(:disabled) { opacity: 0.9; }
+    button#btn-generate:active:not(:disabled) { transform: scale(0.98); }
+    button#btn-generate:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* Progress card */
+    #progress-card { display: none; }
+
+    .status-pill {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: var(--surface2);
+      color: var(--muted);
+      margin-left: auto;
+    }
+    .status-pill.queued       { color: var(--muted); }
+    .status-pill.loading_model{ background: #1e3a5f; color: #60a5fa; }
+    .status-pill.generating   { background: #1e3a5f; color: #60a5fa; }
+    .status-pill.done         { background: #14532d; color: var(--success); }
+    .status-pill.failed       { background: #450a0a; color: var(--error); }
+
+    .prog-bar-wrap {
+      background: var(--surface2);
+      border-radius: 99px;
+      height: 10px;
+      overflow: hidden;
+      margin: 12px 0 6px;
+    }
+    .prog-bar {
+      height: 100%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      transition: width 0.5s ease;
+      width: 0%;
+    }
+
+    .prog-meta {
+      display: flex; justify-content: space-between;
+      font-size: 0.78rem; color: var(--muted); margin-bottom: 10px;
+    }
+
+    .prog-msg {
+      font-size: 0.82rem; color: var(--text);
+      margin-top: 8px; line-height: 1.5;
+    }
+
+    .time-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .time-cell {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+    }
+    .time-cell .val {
+      font-size: 1.1rem; font-weight: 700;
+      color: var(--accent2);
+    }
+    .time-cell .lbl {
+      font-size: 0.72rem; color: var(--muted); margin-top: 3px;
+    }
+
+    /* Video output */
+    #output-card { display: none; }
+
+    video {
+      width: 100%; border-radius: 8px;
+      background: #000;
+      margin-top: 12px;
+    }
+
+    .video-meta {
+      margin-top: 10px;
+      font-size: 0.8rem; color: var(--muted);
+    }
+
+    .dl-btn {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 8px 18px;
+      background: var(--success);
+      color: #fff;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    /* History */
+    #history-card {
+      grid-column: 1 / -1;
+    }
+    .history-list { list-style: none; }
+    .history-list li {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.83rem;
+    }
+    .history-list li:last-child { border-bottom: none; }
+    .history-list .h-prompt { flex: 1; color: var(--text); }
+    .history-list .h-meta   { color: var(--muted); font-size: 0.75rem; }
+
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-msg {
+      background: #450a0a; border: 1px solid var(--error);
+      border-radius: 8px; padding: 10px 14px;
+      color: var(--error); font-size: 0.83rem; margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">▶</div>
+  <div>
+    <h1>AI Video Generator</h1>
+    <p>Text-to-video · CPU inference · ModelScope 1.7B</p>
+  </div>
+  <span class="badge" id="server-status">● Connecting…</span>
+</header>
+
+<main>
+  <!-- ── Prompt / settings card ──────────────────────────────────────── -->
+  <div class="card" id="prompt-card">
+    <h2>⚡ Generate Video</h2>
+
+    <label>Prompt</label>
+    <textarea id="prompt" placeholder="A serene mountain lake at sunrise, mist rising over still water, golden light…"></textarea>
+
+    <label>Duration (seconds): <span id="dur-val">5</span></label>
+    <div class="range-row">
+      <input type="range" id="duration" min="2" max="30" value="5" step="1" />
+      <span class="range-val" id="dur-disp">5s</span>
+    </div>
+
+    <label>Inference steps (quality vs speed)</label>
+    <div class="range-row">
+      <input type="range" id="steps" min="5" max="50" value="20" step="5" />
+      <span class="range-val" id="steps-disp">20</span>
+    </div>
+
+    <label>FPS output</label>
+    <select id="fps">
+      <option value="6">6 fps (fewer frames, faster)</option>
+      <option value="8" selected>8 fps (default)</option>
+      <option value="12">12 fps (smoother, slower)</option>
+    </select>
+
+    <div class="estimate-box" id="estimate-box">
+      <span class="spinner"></span> Calculating estimate…
+    </div>
+
+    <button id="btn-generate">Generate Video</button>
+  </div>
+
+  <!-- ── Progress card ──────────────────────────────────────────────── -->
+  <div class="card" id="progress-card">
+    <h2>
+      📊 Progress
+      <span class="status-pill" id="status-pill">queued</span>
+    </h2>
+
+    <div class="prog-bar-wrap">
+      <div class="prog-bar" id="prog-bar"></div>
+    </div>
+    <div class="prog-meta">
+      <span id="prog-pct">0%</span>
+      <span id="prog-frames"></span>
+    </div>
+
+    <div class="time-grid">
+      <div class="time-cell">
+        <div class="val" id="tc-elapsed">—</div>
+        <div class="lbl">Elapsed</div>
+      </div>
+      <div class="time-cell">
+        <div class="val" id="tc-remaining">—</div>
+        <div class="lbl">Remaining</div>
+      </div>
+      <div class="time-cell">
+        <div class="val" id="tc-estimate">—</div>
+        <div class="lbl">Estimate</div>
+      </div>
+    </div>
+
+    <div class="prog-msg" id="prog-msg">Waiting to start…</div>
+    <div id="error-box"></div>
+  </div>
+
+  <!-- ── Output card ───────────────────────────────────────────────── -->
+  <div class="card" id="output-card">
+    <h2>🎬 Output</h2>
+    <video id="output-video" controls loop></video>
+    <div class="video-meta" id="video-meta"></div>
+    <a id="dl-link" class="dl-btn" download>⬇ Download MP4</a>
+  </div>
+
+  <!-- ── Stickman card ────────────────────────────────────────────────── -->
+  <div class="card" id="stickman-card">
+    <h2>🦾 Stickman Motion Generator</h2>
+    <p style="font-size:0.8rem;color:var(--muted);margin-bottom:14px">
+      Text → 3D human motion skeleton animation (T2M-GPT · CPU)
+    </p>
+
+    <label>Motion Prompt</label>
+    <textarea id="stickman-prompt" placeholder="a person walks forward, a person jumps, a person waves their hand…" style="min-height:70px"></textarea>
+
+    <p style="font-size:0.76rem;color:var(--muted);margin-top:10px">
+      Best prompts: short human body motion descriptions — walk, run, jump, wave, kick, dance, etc.
+    </p>
+
+    <button id="btn-stickman" style="margin-top:16px;width:100%;padding:13px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:8px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:opacity 0.2s">
+      Generate Stickman Video
+    </button>
+
+    <div id="stickman-progress" style="display:none;margin-top:16px">
+      <div class="prog-bar-wrap">
+        <div class="prog-bar" id="stickman-prog-bar" style="background:linear-gradient(90deg,#059669,#10b981)"></div>
+      </div>
+      <div class="prog-msg" id="stickman-msg">Waiting…</div>
+    </div>
+
+    <div id="stickman-output" style="display:none;margin-top:14px">
+      <video id="stickman-video" controls loop style="width:100%;border-radius:8px;background:#000"></video>
+      <a id="stickman-dl" class="dl-btn" download style="background:#059669;margin-top:10px;display:inline-block">⬇ Download MP4</a>
+    </div>
+    <div id="stickman-error"></div>
+  </div>
+
+  <!-- ── History card ──────────────────────────────────────────────── -->
+  <div class="card" id="history-card">
+    <h2>🕑 Recent Jobs</h2>
+    <ul class="history-list" id="history-list">
+      <li><span style="color:var(--muted);font-size:0.82rem">No jobs yet.</span></li>
+    </ul>
+  </div>
+</main>
+
+<script>
+const API = '';
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function fmtSec(s) {
+  if (!s || s < 0) return '—';
+  s = Math.round(s);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60), r = s % 60;
+  return r ? `${m}m ${r}s` : `${m}m`;
+}
+
+// ── Range inputs ──────────────────────────────────────────────────────────────
+const durEl    = document.getElementById('duration');
+const stepsEl  = document.getElementById('steps');
+const fpsEl    = document.getElementById('fps');
+
+durEl.addEventListener('input', () => {
+  document.getElementById('dur-disp').textContent = durEl.value + 's';
+  document.getElementById('dur-val').textContent  = durEl.value;
+  refreshEstimate();
+});
+stepsEl.addEventListener('input', () => {
+  document.getElementById('steps-disp').textContent = stepsEl.value;
+  refreshEstimate();
+});
+fpsEl.addEventListener('change', refreshEstimate);
+
+async function refreshEstimate() {
+  const box = document.getElementById('estimate-box');
+  box.innerHTML = '<span class="spinner"></span> Calculating…';
+  try {
+    const res = await fetch(`${API}/api/estimate`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        duration_seconds: parseFloat(durEl.value),
+        fps: parseInt(fpsEl.value),
+        num_steps: parseInt(stepsEl.value),
+      }),
+    });
+    const d = await res.json();
+    document.getElementById('tc-estimate').textContent = d.display;
+    box.innerHTML = `
+      <strong>${d.display}</strong>
+      <div class="detail">${d.frames} frames · ${d.steps} steps · CPU inference</div>
+      <div class="detail" style="margin-top:4px;color:#f59e0b">⚠ CPU-only: generation will be slow. Plan accordingly.</div>
+    `;
+  } catch(e) {
+    box.textContent = 'Could not fetch estimate.';
+  }
+}
+
+refreshEstimate();   // initial
+
+// ── Generation ────────────────────────────────────────────────────────────────
+let pollTimer = null;
+let currentJob = null;
+
+document.getElementById('btn-generate').addEventListener('click', async () => {
+  const prompt = document.getElementById('prompt').value.trim();
+  if (!prompt) { alert('Please enter a prompt.'); return; }
+
+  const btn = document.getElementById('btn-generate');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+
+  if (pollTimer) clearInterval(pollTimer);
+
+  // reset UI
+  document.getElementById('output-card').style.display  = 'none';
+  document.getElementById('error-box').innerHTML = '';
+  document.getElementById('prog-bar').style.width = '0%';
+  document.getElementById('prog-pct').textContent = '0%';
+  document.getElementById('prog-msg').textContent = 'Queued…';
+  setPill('queued');
+
+  document.getElementById('progress-card').style.display = 'block';
+
+  try {
+    const res = await fetch(`${API}/api/generate`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        prompt,
+        duration_seconds: parseFloat(durEl.value),
+        fps: parseInt(fpsEl.value),
+        num_steps: parseInt(stepsEl.value),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+    currentJob = data.job_id;
+    document.getElementById('tc-estimate').textContent = data.estimate.display;
+    document.getElementById('prog-frames').textContent = `${data.estimate.frames} frames`;
+
+    btn.textContent = 'Generating…';
+    pollTimer = setInterval(() => pollJob(currentJob), 2000);
+
+  } catch(e) {
+    showError(e.message);
+    btn.disabled = false;
+    btn.textContent = 'Generate Video';
+  }
+});
+
+function setPill(status) {
+  const pill = document.getElementById('status-pill');
+  pill.className = 'status-pill ' + status;
+  pill.textContent = status.replace('_', ' ');
+}
+
+async function pollJob(jobId) {
+  try {
+    const res = await fetch(`${API}/api/status/${jobId}`);
+    const job = await res.json();
+    updateProgress(job);
+
+    if (job.status === 'done' || job.status === 'failed') {
+      clearInterval(pollTimer);
+      const btn = document.getElementById('btn-generate');
+      btn.disabled = false;
+      btn.textContent = 'Generate Video';
+      refreshHistory();
+    }
+  } catch(e) {
+    console.warn('Poll error:', e);
+  }
+}
+
+function updateProgress(job) {
+  setPill(job.status);
+
+  const pct = job.progress || 0;
+  document.getElementById('prog-bar').style.width  = pct + '%';
+  document.getElementById('prog-pct').textContent  = pct + '%';
+  document.getElementById('prog-msg').textContent  = job.message || '';
+  document.getElementById('tc-elapsed').textContent   = fmtSec(job.elapsed_seconds);
+  document.getElementById('tc-remaining').textContent = fmtSec(job.remaining_seconds);
+
+  if (job.status === 'done' && job.video_file) {
+    showVideo(job);
+  }
+  if (job.status === 'failed') {
+    showError(job.error || 'Generation failed.');
+  }
+}
+
+function showVideo(job) {
+  const card  = document.getElementById('output-card');
+  const video = document.getElementById('output-video');
+  const dl    = document.getElementById('dl-link');
+  const meta  = document.getElementById('video-meta');
+
+  const url = `${API}/api/video/${job.video_file}`;
+  video.src = url;
+  dl.href   = url;
+  dl.download = job.video_file;
+  meta.textContent = `${job.num_frames} frames · ${job.elapsed_seconds}s generation time · ${job.prompt}`;
+  card.style.display = 'block';
+}
+
+function showError(msg) {
+  document.getElementById('error-box').innerHTML =
+    `<div class="error-msg">⚠ ${msg}</div>`;
+}
+
+// ── History ───────────────────────────────────────────────────────────────────
+async function refreshHistory() {
+  try {
+    const res  = await fetch(`${API}/api/jobs`);
+    const jobs = await res.json();
+    const ul   = document.getElementById('history-list');
+    if (!jobs.length) return;
+    ul.innerHTML = jobs.map(j => `
+      <li>
+        <span class="status-pill ${j.status}">${j.status.replace('_',' ')}</span>
+        <span class="h-prompt">${j.prompt.slice(0, 80)}${j.prompt.length > 80 ? '…' : ''}</span>
+        <span class="h-meta">${j.num_frames}fr · ${fmtSec(j.elapsed_seconds)}</span>
+        ${j.video_file
+          ? `<a href="/api/video/${j.video_file}" style="color:var(--success);font-size:0.78rem;" target="_blank">▶ Play</a>`
+          : ''}
+      </li>
+    `).join('');
+  } catch(e) {}
+}
+
+// ── Stickman generation ───────────────────────────────────────────────────────
+let stickmanPollTimer = null;
+
+document.getElementById('btn-stickman').addEventListener('click', async () => {
+  const prompt = document.getElementById('stickman-prompt').value.trim();
+  if (!prompt) { alert('Please enter a motion prompt.'); return; }
+
+  const btn = document.getElementById('btn-stickman');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+
+  if (stickmanPollTimer) clearInterval(stickmanPollTimer);
+
+  document.getElementById('stickman-output').style.display = 'none';
+  document.getElementById('stickman-error').innerHTML = '';
+  document.getElementById('stickman-prog-bar').style.width = '0%';
+  document.getElementById('stickman-msg').textContent = 'Queued…';
+  document.getElementById('stickman-progress').style.display = 'block';
+
+  try {
+    const res = await fetch(`${API}/api/generate_stickman`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ prompt }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+    btn.textContent = 'Generating…';
+    stickmanPollTimer = setInterval(() => pollStickman(data.job_id), 2000);
+  } catch(e) {
+    document.getElementById('stickman-error').innerHTML = `<div class="error-msg">⚠ ${e.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = 'Generate Stickman Video';
+  }
+});
+
+async function pollStickman(jobId) {
+  try {
+    const res = await fetch(`${API}/api/status/${jobId}`);
+    const job = await res.json();
+
+    document.getElementById('stickman-prog-bar').style.width = (job.progress || 0) + '%';
+    document.getElementById('stickman-msg').textContent = job.message || '';
+
+    if (job.status === 'done') {
+      clearInterval(stickmanPollTimer);
+      const btn = document.getElementById('btn-stickman');
+      btn.disabled = false;
+      btn.textContent = 'Generate Stickman Video';
+
+      const url = `${API}/api/video/${job.video_file}`;
+      document.getElementById('stickman-video').src = url;
+      document.getElementById('stickman-dl').href = url;
+      document.getElementById('stickman-dl').download = job.video_file;
+      document.getElementById('stickman-output').style.display = 'block';
+    }
+    if (job.status === 'failed') {
+      clearInterval(stickmanPollTimer);
+      document.getElementById('btn-stickman').disabled = false;
+      document.getElementById('btn-stickman').textContent = 'Generate Stickman Video';
+      document.getElementById('stickman-error').innerHTML = `<div class="error-msg">⚠ ${job.error || 'Generation failed.'}</div>`;
+    }
+  } catch(e) {
+    console.warn('Stickman poll error:', e);
+  }
+}
+
+// ── Server status ─────────────────────────────────────────────────────────────
+async function checkServer() {
+  const badge = document.getElementById('server-status');
+  try {
+    await fetch(`${API}/api/jobs`);
+    badge.textContent = '● Online';
+    badge.style.color = 'var(--success)';
+  } catch(e) {
+    badge.textContent = '● Offline';
+    badge.style.color = 'var(--error)';
+  }
+}
+checkServer();
+setInterval(checkServer, 15000);
+refreshHistory();
+</script>
+</body>
+</html>
