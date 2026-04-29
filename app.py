@@ -1,16 +1,22 @@
 """
 AI Video Generation Backend
 Flask service that accepts a text prompt and generates a video using
-a lightweight pretrained diffusion model (CPU-compatible).
+a lightweight pretrained diffusion model.
 
 Model used: damo-vilab/text-to-video-ms-1.7b (ModelScope)
 - Smallest widely-used text-to-video model (~3.5GB)
-- Works on CPU (slow but functional)
+- Uses CUDA (GPU) when available, falls back to CPU
 - Outputs short video clips frame by frame
 
 Also supports stickman motion video generation via T2M-GPT:
-- Text-to-motion transformer (CPU-compatible)
+- Text-to-motion transformer
 - Generates 3D human skeleton animations as MP4
+- Uses CUDA when available
+
+Branch: feature/cuda-windows
+- Paths are fully portable (relative to this file's directory)
+- T2M-GPT lives at <repo_root>/t2m_gpt/ (cloned by setup_windows.bat)
+- CUDA is used automatically when torch.cuda.is_available()
 """
 
 import os
@@ -24,14 +30,25 @@ from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 
-# ── Paths ────────────────────────────────────────────────────────────────────
-BASE_DIR   = Path("/localdisk/ciena/ai-video-generation")
+# ── Paths (fully portable — relative to this file's location) ────────────────
+BASE_DIR   = Path(__file__).parent.resolve()
 MODEL_DIR  = BASE_DIR / "models"
 OUTPUT_DIR = BASE_DIR / "outputs"
 LOG_DIR    = BASE_DIR / "logs"
+T2M_REPO   = BASE_DIR / "t2m_gpt"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(LOG_DIR,    exist_ok=True)
+
+# ── Redirect all model caches inside the repo ─────────────────────────────────
+os.environ.setdefault("HF_HOME",            str(MODEL_DIR / "hf_cache"))
+os.environ.setdefault("TRANSFORMERS_CACHE",  str(MODEL_DIR / "hf_cache"))
+os.environ.setdefault("DIFFUSERS_CACHE",     str(MODEL_DIR / "hf_cache"))
+os.environ.setdefault("TORCH_HOME",          str(MODEL_DIR / "torch_cache"))
+
+# ── Device ────────────────────────────────────────────────────────────────────
+import torch
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -43,6 +60,9 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+log.info(f"Using device: {DEVICE}")
+if DEVICE == "cuda":
+    log.info(f"GPU: {torch.cuda.get_device_name(0)}  VRAM: {torch.cuda.get_device_properties(0).total_memory // 1024**2} MB")
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = Flask(__name__, static_folder="static", template_folder="templates")
@@ -57,15 +77,15 @@ _pipeline_lock = threading.Lock()
 
 MODEL_ID = "damo-vilab/text-to-video-ms-1.7b"
 
-# ── Time estimation (CPU, based on empirical benchmarks) ─────────────────────
-# ModelScope 1.7B on CPU: ~90-150 sec/frame at default inference steps (50)
-# We use 20 steps for speed; ~30-50 sec/frame on a 10-core Xeon
-SECS_PER_FRAME_CPU = 40  # conservative estimate per frame
+# ── Time estimation ───────────────────────────────────────────────────────────
+# GPU (RTX 3060/3070 8GB): ~1-2 sec/frame @ 20 steps
+# CPU (10-core Xeon):      ~40 sec/frame  @ 20 steps
+SECS_PER_FRAME = 2 if DEVICE == "cuda" else 40
 
 
 def estimate_time(num_frames: int, num_inference_steps: int) -> dict:
     """Return human-readable time estimate."""
-    total_seconds = num_frames * num_inference_steps * (SECS_PER_FRAME_CPU / 20)
+    total_seconds = num_frames * num_inference_steps * (SECS_PER_FRAME / 20)
     low  = int(total_seconds * 0.8)
     high = int(total_seconds * 1.3)
 
@@ -81,6 +101,7 @@ def estimate_time(num_frames: int, num_inference_steps: int) -> dict:
         "display":      f"{fmt(low)} – {fmt(high)}",
         "frames":       num_frames,
         "steps":        num_inference_steps,
+        "device":       DEVICE,
     }
 
 
@@ -91,22 +112,21 @@ def get_pipeline():
         return _pipeline
 
     with _pipeline_lock:
-        if _pipeline is not None:  # double-checked
+        if _pipeline is not None:
             return _pipeline
 
-        log.info("Loading ModelScope text-to-video pipeline (CPU)…")
+        log.info(f"Loading ModelScope text-to-video pipeline ({DEVICE.upper()})…")
         try:
             from diffusers import DiffusionPipeline
-            import torch
 
+            dtype = torch.float16 if DEVICE == "cuda" else torch.float32
             pipe = DiffusionPipeline.from_pretrained(
                 MODEL_ID,
-                cache_dir=str(MODEL_DIR),
-                torch_dtype=torch.float32,
+                cache_dir=str(MODEL_DIR / "hf_cache"),
+                torch_dtype=dtype,
                 trust_remote_code=True,
             )
-            pipe = pipe.to("cpu")
-            # Reduce memory footprint
+            pipe = pipe.to(DEVICE)
             pipe.enable_attention_slicing()
             _pipeline = pipe
             log.info("Pipeline loaded successfully.")
@@ -118,11 +138,10 @@ def get_pipeline():
 
 def run_generation(job_id: str, prompt: str, num_frames: int, num_steps: int):
     """Background thread: runs video generation and updates job state."""
-    import torch
     import imageio
 
-    jobs[job_id]["status"]  = "loading_model"
-    jobs[job_id]["message"] = "Loading model into memory…"
+    jobs[job_id]["status"]   = "loading_model"
+    jobs[job_id]["message"]  = "Loading model into memory…"
     jobs[job_id]["progress"] = 2
 
     try:
@@ -137,18 +156,16 @@ def run_generation(job_id: str, prompt: str, num_frames: int, num_steps: int):
     jobs[job_id]["message"]  = "Generating frames…"
     jobs[job_id]["progress"] = 5
 
-    frame_count = [0]
-    start_time  = time.time()
+    start_time = time.time()
 
     def step_callback(pipe_obj, step, timestep, callback_kwargs):
-        """Called after each diffusion step to update progress."""
         completed_steps = step + 1
         pct = 5 + int((completed_steps / num_steps) * 90)
-        elapsed  = time.time() - start_time
-        per_step = elapsed / completed_steps if completed_steps else 0
+        elapsed   = time.time() - start_time
+        per_step  = elapsed / completed_steps if completed_steps else 0
         remaining = per_step * (num_steps - completed_steps)
 
-        jobs[job_id]["progress"] = pct
+        jobs[job_id]["progress"]          = pct
         jobs[job_id]["elapsed_seconds"]   = int(elapsed)
         jobs[job_id]["remaining_seconds"] = int(remaining)
         jobs[job_id]["message"] = (
@@ -167,7 +184,7 @@ def run_generation(job_id: str, prompt: str, num_frames: int, num_steps: int):
                 callback_on_step_end_tensor_inputs=["latents"],
             )
 
-        frames = output.frames[0]  # list of PIL images
+        frames = output.frames[0]
 
         out_path = OUTPUT_DIR / f"{job_id}.mp4"
         imageio.mimwrite(
@@ -179,10 +196,10 @@ def run_generation(job_id: str, prompt: str, num_frames: int, num_steps: int):
         )
 
         elapsed_total = int(time.time() - start_time)
-        jobs[job_id]["status"]    = "done"
-        jobs[job_id]["progress"]  = 100
-        jobs[job_id]["video_file"] = f"{job_id}.mp4"
-        jobs[job_id]["message"]   = f"Done in {elapsed_total}s — {len(frames)} frames"
+        jobs[job_id]["status"]          = "done"
+        jobs[job_id]["progress"]        = 100
+        jobs[job_id]["video_file"]      = f"{job_id}.mp4"
+        jobs[job_id]["message"]         = f"Done in {elapsed_total}s — {len(frames)} frames"
         jobs[job_id]["elapsed_seconds"] = elapsed_total
         log.info(f"[{job_id}] Generation complete: {out_path}")
 
@@ -202,12 +219,11 @@ def index():
 
 @app.route("/api/estimate", methods=["POST"])
 def api_estimate():
-    """Return time estimate before starting generation."""
     data       = request.get_json(force=True)
-    duration   = float(data.get("duration_seconds", 5))   # desired video length
+    duration   = float(data.get("duration_seconds", 5))
     fps        = int(data.get("fps", 8))
     num_steps  = int(data.get("num_steps", 20))
-    num_frames = max(8, min(int(duration * fps), 64))      # cap at 64 frames
+    num_frames = max(8, min(int(duration * fps), 64))
     est        = estimate_time(num_frames, num_steps)
     est["num_frames"] = num_frames
     return jsonify(est)
@@ -215,7 +231,6 @@ def api_estimate():
 
 @app.route("/api/generate", methods=["POST"])
 def api_generate():
-    """Start a video generation job."""
     data       = request.get_json(force=True)
     prompt     = data.get("prompt", "").strip()
     duration   = float(data.get("duration_seconds", 5))
@@ -257,7 +272,6 @@ def api_generate():
 
 @app.route("/api/status/<job_id>", methods=["GET"])
 def api_status(job_id):
-    """Poll job status."""
     job = jobs.get(job_id)
     if not job:
         return jsonify({"error": "job not found"}), 404
@@ -266,27 +280,23 @@ def api_status(job_id):
 
 @app.route("/api/video/<filename>", methods=["GET"])
 def api_video(filename):
-    """Stream the generated video file."""
     return send_from_directory(str(OUTPUT_DIR), filename)
 
 
 @app.route("/api/jobs", methods=["GET"])
 def api_jobs():
-    """List recent jobs."""
     recent = sorted(jobs.values(), key=lambda j: j["created_at"], reverse=True)[:20]
     return jsonify(recent)
 
 
 # ── Stickman (T2M-GPT) generation ────────────────────────────────────────────
 
-T2M_REPO = Path("/localdisk/ciena/T2M-GPT")
-
 _stickman_models = None
-_stickman_lock = threading.Lock()
+_stickman_lock   = threading.Lock()
 
 
 def get_stickman_models():
-    """Lazy-load T2M-GPT models onto CPU (once)."""
+    """Lazy-load T2M-GPT models (uses CUDA when available)."""
     global _stickman_models
     if _stickman_models is not None:
         return _stickman_models
@@ -295,12 +305,13 @@ def get_stickman_models():
         if _stickman_models is not None:
             return _stickman_models
 
-        log.info("Loading T2M-GPT stickman models (CPU)…")
-        import torch
+        log.info(f"Loading T2M-GPT stickman models ({DEVICE.upper()})…")
 
-        # Monkey-patch .cuda() -> .cpu()
-        torch.Tensor.cuda = lambda self, *a, **k: self.cpu()
-        torch.nn.Module.cuda = lambda self, *a, **k: self.cpu()
+        if not T2M_REPO.exists():
+            raise RuntimeError(
+                f"T2M-GPT not found at {T2M_REPO}. "
+                "Please run setup_windows.bat to download and configure it."
+            )
 
         # Add T2M-GPT to path
         if str(T2M_REPO) not in sys.path:
@@ -311,47 +322,65 @@ def get_stickman_models():
         import models.vqvae as vqvae
         import models.t2m_trans as trans
 
-        device = torch.device("cpu")
+        device = torch.device(DEVICE)
 
-        # Parse args with correct checkpoint dimensions
+        # Parse args
         old_argv = sys.argv[:]
-        sys.argv = ["flask"]
-        args = option_trans.get_args_parser()
-        sys.argv = old_argv
-        args.dataname = "t2m"
-        args.resume_pth   = str(T2M_REPO / "pretrained/VQVAE/net_last.pth")
-        args.resume_trans = str(T2M_REPO / "pretrained/VQTransformer_corruption05/net_best_fid.pth")
-        args.down_t = 2; args.depth = 3; args.block_size = 51
-        args.embed_dim_gpt = 1024; args.num_layers = 9
-        args.n_head_gpt = 16; args.clip_dim = 512
+        sys.argv  = ["flask"]
+        args      = option_trans.get_args_parser()
+        sys.argv  = old_argv
 
+        args.dataname     = "t2m"
+        args.resume_pth   = str(T2M_REPO / "pretrained" / "VQVAE" / "net_last.pth")
+        args.resume_trans = str(T2M_REPO / "pretrained" / "VQTransformer_corruption05" / "net_best_fid.pth")
+        args.down_t        = 2
+        args.depth         = 3
+        args.block_size    = 51
+        args.embed_dim_gpt = 1024
+        args.num_layers    = 9
+        args.n_head_gpt    = 16
+        args.clip_dim      = 512
+
+        # Load CLIP
         clip_model, _ = clip.load("ViT-B/32", device=device, jit=False)
-        clip_model.float()
+        if DEVICE == "cuda":
+            clip.model.convert_weights(clip_model)   # fp16 on GPU
+        else:
+            clip_model.float()                        # fp32 on CPU (fp16 not supported)
         clip_model.eval()
         for p in clip_model.parameters():
             p.requires_grad = False
 
-        net = vqvae.HumanVQVAE(args, args.nb_code, args.code_dim, args.output_emb_width,
-                                args.down_t, args.stride_t, args.width, args.depth,
-                                args.dilation_growth_rate)
-        net.load_state_dict(torch.load(args.resume_pth, map_location="cpu")["net"], strict=True)
-        net.eval()
+        # Load VQ-VAE
+        net = vqvae.HumanVQVAE(
+            args, args.nb_code, args.code_dim, args.output_emb_width,
+            args.down_t, args.stride_t, args.width, args.depth,
+            args.dilation_growth_rate,
+        )
+        net.load_state_dict(
+            torch.load(args.resume_pth, map_location=DEVICE)["net"], strict=True
+        )
+        net.eval().to(device)
 
-        te = trans.Text2Motion_Transformer(num_vq=args.nb_code, embed_dim=args.embed_dim_gpt,
-                                           clip_dim=args.clip_dim, block_size=args.block_size,
-                                           num_layers=args.num_layers, n_head=args.n_head_gpt,
-                                           drop_out_rate=args.drop_out_rate, fc_rate=args.ff_rate)
-        te.load_state_dict(torch.load(args.resume_trans, map_location="cpu")["trans"], strict=True)
-        te.eval()
+        # Load GPT transformer
+        te = trans.Text2Motion_Transformer(
+            num_vq=args.nb_code, embed_dim=args.embed_dim_gpt,
+            clip_dim=args.clip_dim, block_size=args.block_size,
+            num_layers=args.num_layers, n_head=args.n_head_gpt,
+            drop_out_rate=args.drop_out_rate, fc_rate=args.ff_rate,
+        )
+        te.load_state_dict(
+            torch.load(args.resume_trans, map_location=DEVICE)["trans"], strict=True
+        )
+        te.eval().to(device)
 
-        _stickman_models = (clip_model, net, te, args)
+        _stickman_models = (clip_model, net, te, args, device)
         log.info("T2M-GPT models loaded successfully.")
     return _stickman_models
 
 
 def run_stickman_generation(job_id: str, prompt: str):
     """Background thread: runs T2M-GPT stickman generation."""
-    import torch
     import numpy as np
     import matplotlib
     matplotlib.use("Agg")
@@ -376,7 +405,7 @@ def run_stickman_generation(job_id: str, prompt: str):
     jobs[job_id]["progress"] = 5
 
     try:
-        clip_model, net, te, args = get_stickman_models()
+        clip_model, net, te, args, device = get_stickman_models()
     except Exception as e:
         jobs[job_id]["status"]  = "failed"
         jobs[job_id]["error"]   = str(e)
@@ -388,12 +417,13 @@ def run_stickman_generation(job_id: str, prompt: str):
     jobs[job_id]["progress"] = 20
 
     try:
-        text_tokens = clip.tokenize([prompt], truncate=True).to(torch.device("cpu"))
+        text_tokens = clip.tokenize([prompt], truncate=True).to(device)
         with torch.no_grad():
-            text_feat = clip_model.encode_text(text_tokens).float()
+            text_feat    = clip_model.encode_text(text_tokens).float()
             index_motion = te.sample(text_feat, if_categorial=True)
-            pred_pose = net.forward_decoder(index_motion)
+            pred_pose    = net.forward_decoder(index_motion)
 
+        # Move to CPU before numpy conversion
         pred_denorm = pred_pose.detach().cpu()
         joints = recover_from_ric(pred_denorm, 22).squeeze(0).numpy()  # (T, 22, 3)
         T = joints.shape[0]
@@ -402,13 +432,13 @@ def run_stickman_generation(job_id: str, prompt: str):
         jobs[job_id]["progress"] = 70
         jobs[job_id]["message"]  = f"Rendering {T} frames…"
 
-        # Render stickman
+        # Render stickman animation
         x_min, x_max = joints[:, :, 0].min(), joints[:, :, 0].max()
         y_min, y_max = joints[:, :, 1].min(), joints[:, :, 1].max()
         z_min, z_max = joints[:, :, 2].min(), joints[:, :, 2].max()
 
         fig = plt.figure(figsize=(6, 6), facecolor="black")
-        ax = fig.add_subplot(111, projection="3d")
+        ax  = fig.add_subplot(111, projection="3d")
 
         def update(frame_idx):
             ax.cla()
@@ -425,7 +455,7 @@ def run_stickman_generation(job_id: str, prompt: str):
                 ax.plot(xs, ys, zs, color=color, linewidth=2.5)
                 ax.scatter(xs, ys, zs, color=color, s=20, zorder=5)
 
-        ani = animation.FuncAnimation(fig, update, frames=T, interval=50)
+        ani      = animation.FuncAnimation(fig, update, frames=T, interval=50)
         out_path = OUTPUT_DIR / f"{job_id}.mp4"
         plt.rcParams["animation.ffmpeg_path"] = imageio_ffmpeg.get_ffmpeg_exe()
         writer = animation.FFMpegWriter(fps=20, bitrate=1800)
@@ -436,10 +466,10 @@ def run_stickman_generation(job_id: str, prompt: str):
         jobs[job_id]["progress"]   = 100
         jobs[job_id]["video_file"] = f"{job_id}.mp4"
         jobs[job_id]["message"]    = f"Done — {T} frames stickman animation"
-        log.info(f"[{job_id}] Stickman generation complete: {out_path}")
+        log.info(f"[{job_id}] Stickman complete: {out_path}")
 
     except Exception as e:
-        log.error(f"[{job_id}] Stickman generation error: {e}", exc_info=True)
+        log.error(f"[{job_id}] Stickman error: {e}", exc_info=True)
         jobs[job_id]["status"]  = "failed"
         jobs[job_id]["error"]   = str(e)
         jobs[job_id]["message"] = f"Generation failed: {e}"
@@ -447,7 +477,6 @@ def run_stickman_generation(job_id: str, prompt: str):
 
 @app.route("/api/generate_stickman", methods=["POST"])
 def api_generate_stickman():
-    """Start a stickman motion video generation job."""
     data   = request.get_json(force=True)
     prompt = data.get("prompt", "").strip()
 
@@ -480,13 +509,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=7860)
-    args = parser.parse_args()
+    cli_args = parser.parse_args()
 
-    # Redirect HF/model caches to localdisk (set by start.sh env vars too)
-    os.environ.setdefault("HF_HOME",            str(MODEL_DIR / "hf_cache"))
-    os.environ.setdefault("TRANSFORMERS_CACHE",  str(MODEL_DIR / "hf_cache"))
-    os.environ.setdefault("DIFFUSERS_CACHE",     str(MODEL_DIR / "hf_cache"))
-    os.environ.setdefault("TORCH_HOME",          str(MODEL_DIR / "torch_cache"))
-
-    log.info(f"Starting AI Video Generation server on http://0.0.0.0:{args.port}")
-    app.run(host="0.0.0.0", port=args.port, debug=False, threaded=True)
+    log.info(f"Starting AI Video Generation server on http://0.0.0.0:{cli_args.port}")
+    app.run(host="0.0.0.0", port=cli_args.port, debug=False, threaded=True)

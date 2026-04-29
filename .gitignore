@@ -33,6 +33,7 @@ logs/
 # ── OS / editor ───────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+desktop.ini
 .idea/
 .vscode/
 *.swp
@@ -41,3 +42,10 @@ Thumbs.db
 # ── Environment variables ─────────────────────────────────────────────────────
 .env
 *.env
+
+# ── T2M-GPT (cloned by setup_windows.bat, not committed to this repo) ─────────
+t2m_gpt/
+
+# ── Windows temp / scratch files ─────────────────────────────────────────────
+*.bat~
+*.ps1~
