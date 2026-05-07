@@ -760,8 +760,8 @@
 
       <label>Model variant</label>
       <select id="wan-model-variant">
-        <option value="1.3b">Wan2.1-T2V-1.3B — consumer GPU, 6 GB VRAM, 480P (~17 GB download)</option>
-        <option value="14b">Wan2.1-T2V-14B — high quality, 16+ GB VRAM, 480P/720P (~139 GB download)</option>
+        <option value="1.3b">Wan2.1-T2V-1.3B — consumer GPU, 6 GB VRAM, 480P (~45 GB download)</option>
+        <option value="14b">Wan2.1-T2V-14B — high quality, 16+ GB VRAM, 480P/720P (~80 GB download)</option>
       </select>
       <div id="wan-model-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
         T2V-1.3B: best for Alienware RTX 3060 (6 GB). Uses CPU offloading to leverage system RAM.
@@ -1510,8 +1510,8 @@ bindRange('wan-steps',    'wan-steps-disp');
 bindRange('wan-guidance', 'wan-guidance-disp');
 
 const WAN_MODEL_NOTES = {
-  '1.3b': 'Best for RTX 3060 (6 GB). Uses CPU offloading. ~5s per clip at 480P. ~17 GB download.',
-  '14b':  'High quality. Requires 16+ GB VRAM. Uses sequential CPU offload on low-VRAM GPUs — very slow. ~139 GB download.',
+  '1.3b': 'Best for RTX 3060 (6 GB). Uses CPU offloading. ~5s per clip at 480P. ~45 GB download.',
+  '14b':  'High quality. Requires 16+ GB VRAM. Uses sequential CPU offload on low-VRAM GPUs — very slow. ~80 GB download.',
 };
 
 // Cache GPU info after first fetch

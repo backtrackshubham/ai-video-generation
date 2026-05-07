@@ -922,8 +922,8 @@ def run_stickman_generation(job_id: str, prompt: str, slug: str,
 _wan_pipeline = None
 _wan_lock     = threading.Lock()
 
-WAN_MODEL_ID_13B = "Wan-AI/Wan2.1-T2V-1.3B"
-WAN_MODEL_ID_14B = "Wan-AI/Wan2.1-T2V-14B"
+WAN_MODEL_ID_13B = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+WAN_MODEL_ID_14B = "Wan-AI/Wan2.1-T2V-14B-Diffusers"
 
 # Seconds-per-step estimate for Wan2.1 (RTX 3060 6GB with offload)
 SECS_PER_STEP_WAN = 6 if DEVICE == "cuda" else 180
@@ -938,12 +938,10 @@ def get_wan_pipeline(model_id: str = WAN_MODEL_ID_13B):
             return _wan_pipeline
         log.info(f"Loading Wan2.1 pipeline: {model_id} ({DEVICE.upper()})…")
         try:
-            from diffusers import AutoencoderKLWan, WanPipeline
-            from transformers import AutoTokenizer, UMT5EncoderModel
+            from diffusers import WanPipeline
 
             dtype = torch.bfloat16 if DEVICE == "cuda" else torch.float32
 
-            # Load with CPU offload for low-VRAM GPUs (6 GB)
             pipe = WanPipeline.from_pretrained(
                 model_id,
                 cache_dir=str(MODEL_DIR / "hf_cache"),
@@ -1447,13 +1445,13 @@ MODEL_REGISTRY = {
     },
     "wan-1.3b": {
         "hf_repo":  WAN_MODEL_ID_13B,
-        "size_gb":  17,
+        "size_gb":  45,
         "label":    "Wan2.1-T2V-1.3B",
         "tab":      "wan",
     },
     "wan-14b": {
         "hf_repo":  WAN_MODEL_ID_14B,
-        "size_gb":  139,
+        "size_gb":  80,
         "label":    "Wan2.1-T2V-14B",
         "tab":      "wan",
     },
