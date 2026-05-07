@@ -1495,6 +1495,7 @@ def api_gpu_info():
 
 
 @app.route("/api/model_status", methods=["GET"])
+def api_model_status():
     """Return download status for all known models."""
     result = {}
     for key, info in MODEL_REGISTRY.items():
