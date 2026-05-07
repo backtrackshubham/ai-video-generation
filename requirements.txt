@@ -37,7 +37,7 @@ matplotlib>=3.7.0
 
 # --- MDM / motion model dependencies ---
 smplx
-chumpy
+# chumpy installed separately in setup.py (legacy package, broken on pip>=23)
 einops
 ftfy
 regex

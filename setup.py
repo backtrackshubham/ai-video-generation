@@ -169,6 +169,9 @@ def install_dependencies():
         error(f"requirements.txt not found at {req}")
     pip("install", "--upgrade", "pip", "--quiet")
     pip("install", "-r", str(req), "--quiet")
+    # chumpy has a broken setup.py that tries to import pip internally;
+    # --no-build-isolation bypasses the isolated build env that triggers the bug
+    pip("install", "chumpy", "--no-build-isolation", "--quiet")
     pip("install", "git+https://github.com/openai/CLIP.git", "--quiet")
     info("All dependencies installed")
 
