@@ -950,7 +950,13 @@ def get_wan_pipeline(model_id: str = WAN_MODEL_ID_13B):
                 torch_dtype=dtype,
             )
             if DEVICE == "cuda":
-                pipe.enable_model_cpu_offload()
+                if model_id == WAN_MODEL_ID_14B:
+                    # 14B needs aggressive layer-by-layer offload; enable_model_cpu_offload
+                    # is not sufficient for 6 GB cards — sequential offload is slower but safer
+                    log.info("Wan2.1 14B: using sequential CPU offload (16+ GB VRAM recommended)")
+                    pipe.enable_sequential_cpu_offload()
+                else:
+                    pipe.enable_model_cpu_offload()
             else:
                 pipe = pipe.to(DEVICE)
 
@@ -1478,8 +1484,17 @@ _download_jobs: dict = {}
 _download_lock = threading.Lock()
 
 
+@app.route("/api/gpu_info", methods=["GET"])
+def api_gpu_info():
+    """Return GPU VRAM info so the frontend can warn about low-VRAM models."""
+    if DEVICE != "cuda" or not torch.cuda.is_available():
+        return jsonify({"available": False, "vram_gb": 0, "name": "CPU"})
+    props = torch.cuda.get_device_properties(0)
+    vram_gb = round(props.total_memory / (1024 ** 3), 1)
+    return jsonify({"available": True, "vram_gb": vram_gb, "name": props.name})
+
+
 @app.route("/api/model_status", methods=["GET"])
-def api_model_status():
     """Return download status for all known models."""
     result = {}
     for key, info in MODEL_REGISTRY.items():

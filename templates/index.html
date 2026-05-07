@@ -766,6 +766,11 @@
       <div id="wan-model-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
         T2V-1.3B: best for Alienware RTX 3060 (6 GB). Uses CPU offloading to leverage system RAM.
       </div>
+      <div id="wan-vram-warn" style="display:none;margin-top:8px;padding:10px 12px;background:#422;border:1px solid #f87171;border-radius:6px;font-size:0.78rem;color:#fca5a5;">
+        ⚠️ <strong>Low VRAM warning:</strong> Your GPU has <span id="wan-vram-gb"></span> GB VRAM.
+        Wan2.1-14B requires 16+ GB. It will use sequential CPU offload and will be
+        <strong>very slow</strong> (hours per clip). Consider using the 1.3B model instead.
+      </div>
 
       <label>Title</label>
       <input type="text" id="wan-title" placeholder="e.g. anime-city-rain" />
@@ -1505,8 +1510,15 @@ bindRange('wan-guidance', 'wan-guidance-disp');
 
 const WAN_MODEL_NOTES = {
   '1.3b': 'Best for RTX 3060 (6 GB). Uses CPU offloading. ~5s per clip at 480P. ~3 GB download.',
-  '14b':  'High quality. Requires 16+ GB VRAM. 480P and 720P. ~28 GB download.',
+  '14b':  'High quality. Requires 16+ GB VRAM. Uses sequential CPU offload on low-VRAM GPUs — very slow. ~28 GB download.',
 };
+
+// Cache GPU info after first fetch
+let _gpuInfo = null;
+function fetchGpuInfo(cb) {
+  if (_gpuInfo !== null) { cb(_gpuInfo); return; }
+  fetch('/api/gpu_info').then(r => r.json()).then(d => { _gpuInfo = d; cb(d); }).catch(() => { _gpuInfo = {available: false, vram_gb: 0}; cb(_gpuInfo); });
+}
 
 function updateWanModelUI() {
   const v = document.getElementById('wan-model-variant').value;
@@ -1514,6 +1526,21 @@ function updateWanModelUI() {
   updateWanClipsHint();
   const wanRegistryKey = v === '14b' ? 'wan-14b' : 'wan-1.3b';
   checkModel('wan-dl-banner', wanRegistryKey, 'btn-wan', () => {});
+
+  // Show VRAM warning when 14B is selected on a low-VRAM GPU (<= 14 GB)
+  const warn = document.getElementById('wan-vram-warn');
+  if (v === '14b') {
+    fetchGpuInfo(gpu => {
+      if (gpu.available && gpu.vram_gb <= 14) {
+        document.getElementById('wan-vram-gb').textContent = gpu.vram_gb;
+        warn.style.display = 'block';
+      } else {
+        warn.style.display = 'none';
+      }
+    });
+  } else {
+    warn.style.display = 'none';
+  }
 }
 
 function updateWanClipsHint() {
