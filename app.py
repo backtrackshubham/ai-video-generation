@@ -1447,7 +1447,7 @@ MODEL_REGISTRY = {
     },
     "wan-1.3b": {
         "hf_repo":  WAN_MODEL_ID_13B,
-        "size_gb":  3,
+        "size_gb":  17,
         "label":    "Wan2.1-T2V-1.3B",
         "tab":      "wan",
     },
