@@ -46,16 +46,18 @@ A Flask-based web app for AI video generation with four generation modes, each o
 
 | Model | Size | Min VRAM | Speed (GPU) | Speed (CPU) | Quality | Recommended For |
 |-------|------|----------|-------------|-------------|---------|-----------------|
-| **CogVideoX-5B** | ~21 GB | 16 GB | ~4–12 min/clip | Not practical | ⭐⭐⭐⭐ | High-end GPU workstation |
-| **CogVideoX-1.5-5B** | ~20 GB | 16 GB | ~5–15 min/clip | Not practical | ⭐⭐⭐⭐⭐ | High-end GPU; longer clips (10s) |
-| **CogVideoX-5B-I2V** | ~20 GB | 16 GB | ~4–12 min/clip | Not practical | ⭐⭐⭐⭐ | Image-guided generation, high-end GPU |
-| **CogVideoX-1.5-5B-I2V** | ~20 GB | 16 GB | ~5–15 min/clip | Not practical | ⭐⭐⭐⭐⭐ | Best I2V quality, high-end GPU |
-| **ModelScope 1.7B** | ~4 GB | 4 GB | ~1–2 min/clip | ~15–40 min/clip | ⭐⭐ | CPU fallback; has watermarks |
-| **SVD 1.1** | ~8 GB | 8 GB | ~2–5 min/clip | ~60 min/clip | ⭐⭐⭐⭐ | Image-to-video on mid-range GPU |
-| **Wan2.1-T2V-1.3B** | ~3 GB | 6 GB* | ~2–4 min/clip | ~30 min/clip | ⭐⭐⭐⭐⭐ | Best quality/size ratio; RTX 3060 friendly |
-| **Wan2.1-T2V-14B** | ~28 GB | 16 GB | ~8–20 min/clip | Not practical | ⭐⭐⭐⭐⭐ | Highest quality; high-end GPU only |
+| **CogVideoX-5B** | ~22 GB | 16 GB | ~4–12 min/clip | Not practical | ⭐⭐⭐⭐ | High-end GPU workstation |
+| **CogVideoX-1.5-5B** | ~31 GB | 16 GB | ~5–15 min/clip | Not practical | ⭐⭐⭐⭐⭐ | High-end GPU; longer clips (10s) |
+| **CogVideoX-5B-I2V** | ~22 GB | 16 GB | ~4–12 min/clip | Not practical | ⭐⭐⭐⭐ | Image-guided generation, high-end GPU |
+| **CogVideoX-1.5-5B-I2V** | ~31 GB | 16 GB | ~5–15 min/clip | Not practical | ⭐⭐⭐⭐⭐ | Best I2V quality, high-end GPU |
+| **ModelScope 1.7B** | ~33 GB | 4 GB | ~1–2 min/clip | ~15–40 min/clip | ⭐⭐ | CPU fallback; has watermarks |
+| **SVD 1.1** | ~30 GB | 8 GB | ~2–5 min/clip | ~60 min/clip | ⭐⭐⭐⭐ | Image-to-video on mid-range GPU |
+| **Wan2.1-T2V-1.3B** | ~45 GB | 6 GB* | ~2–4 min/clip | ~30 min/clip | ⭐⭐⭐⭐⭐ | Best quality/size ratio; RTX 3060 friendly |
+| **Wan2.1-T2V-14B** | ~80 GB | 16 GB | ~8–20 min/clip | Not practical | ⭐⭐⭐⭐⭐ | Highest quality; high-end GPU only |
 
 > \* Wan2.1-T2V-1.3B uses `enable_model_cpu_offload()` on CUDA — leverages system RAM to stay within 6 GB VRAM.
+> 
+> **Note on download sizes:** These are the full HuggingFace repo sizes (diffusers format). They include all weight shards, VAE, text encoder, tokenizer, and config files. ModelScope and SVD repos contain both fp16 and fp32 weight variants, which inflates their size on disk.
 
 ### Quick Decision Guide
 
@@ -76,10 +78,10 @@ Do you have a GPU?
 
 ### Requirements
 
-- Python 3.8+ (Linux) / 3.10+ (Windows)
+- Python 3.13 (Windows) / 3.8+ (Linux)
 - Git
 - NVIDIA driver 525+ (for CUDA; CPU-only also works)
-- ~35 GB free disk space for a typical model set
+- ~100 GB free disk space for a typical model set (Wan2.1-1.3B alone is ~45 GB)
 
 ### First-time setup (any platform)
 
@@ -90,7 +92,7 @@ python setup.py
 The script will:
 1. Auto-detect your OS (Windows or Linux/macOS) — confirm or override
 2. Ask whether to install PyTorch with CUDA or CPU-only
-3. Ask whether to pre-download Wan2.1-T2V-1.3B (~3 GB)
+3. Ask whether to pre-download Wan2.1-T2V-1.3B (~45 GB)
 4. Create a virtual environment (`venv/`)
 5. Install all Python dependencies from `requirements.txt`
 6. Clone MDM and T2M-GPT into `cloned-repos/`
@@ -170,7 +172,7 @@ Models are lazy-loaded on first use. The UI will show a download banner if a sel
 python download_models.py --list                   # show status of all models
 python download_models.py wan-1.3b                 # download one model
 python download_models.py cogvideox svd            # download multiple
-python download_models.py all                      # download everything (~100+ GB)
+python download_models.py all                      # download everything (~300+ GB)
 python download_models.py                          # interactive menu
 ```
 
@@ -178,14 +180,14 @@ Available model keys:
 
 | Key | Model | Size |
 |-----|-------|------|
-| `cogvideox` | CogVideoX-5B | ~21 GB |
-| `cogvideox15` | CogVideoX-1.5-5B | ~20 GB |
-| `cogvideox-i2v` | CogVideoX-5B-I2V | ~20 GB |
-| `cogvideox15-i2v` | CogVideoX-1.5-5B-I2V | ~20 GB |
-| `modelscope` | ModelScope 1.7B | ~4 GB |
-| `svd` | Stable Video Diffusion 1.1 | ~8 GB |
-| `wan-1.3b` | Wan2.1-T2V-1.3B | ~3 GB |
-| `wan-14b` | Wan2.1-T2V-14B | ~28 GB |
+| `cogvideox` | CogVideoX-5B | ~22 GB |
+| `cogvideox15` | CogVideoX-1.5-5B | ~31 GB |
+| `cogvideox-i2v` | CogVideoX-5B-I2V | ~22 GB |
+| `cogvideox15-i2v` | CogVideoX-1.5-5B-I2V | ~31 GB |
+| `modelscope` | ModelScope 1.7B | ~33 GB |
+| `svd` | Stable Video Diffusion 1.1 | ~30 GB |
+| `wan-1.3b` | Wan2.1-T2V-1.3B | ~45 GB |
+| `wan-14b` | Wan2.1-T2V-14B | ~80 GB |
 
 All models are cached under `models/hf_cache/` inside the repo.
 
@@ -273,3 +275,4 @@ git pull
 | `POST` | `/api/download_model/<key>` | Start background model download |
 | `GET`  | `/api/download_status/<key>` | Poll model download progress |
 | `POST` | `/api/estimate` | Estimate generation time |
+| `GET`  | `/api/gpu_info` | GPU name and VRAM (used for low-VRAM warnings) |
