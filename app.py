@@ -22,7 +22,7 @@ import threading
 import json
 import logging
 from pathlib import Path
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -1394,6 +1394,204 @@ def api_generate_wan():
 
     log.info(f"[{job_id}] Wan2.1: variant={model_variant} res={resolution} clips={num_clips} steps={num_steps}")
     return jsonify({"job_id": job_id, "estimate": est}), 202
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODEL REGISTRY — download status & on-demand download
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Registry: model_key → { hf_repo, size_gb, label, cache_subdir_pattern }
+MODEL_REGISTRY = {
+    "cogvideox": {
+        "hf_repo":  COG_MODEL_ID,
+        "size_gb":  21,
+        "label":    "CogVideoX-5B",
+        "tab":      "t2v",
+    },
+    "cogvideox15": {
+        "hf_repo":  COG15_MODEL_ID,
+        "size_gb":  20,
+        "label":    "CogVideoX-1.5-5B",
+        "tab":      "t2v",
+    },
+    "cogvideox-i2v": {
+        "hf_repo":  COG_I2V_MODEL_ID,
+        "size_gb":  20,
+        "label":    "CogVideoX-5B-I2V",
+        "tab":      "t2v",
+    },
+    "cogvideox15-i2v": {
+        "hf_repo":  COG15_I2V_MODEL_ID,
+        "size_gb":  20,
+        "label":    "CogVideoX-1.5-5B-I2V",
+        "tab":      "t2v",
+    },
+    "modelscope": {
+        "hf_repo":  MODELSCOPE_MODEL_ID,
+        "size_gb":  4,
+        "label":    "ModelScope 1.7B",
+        "tab":      "t2v",
+    },
+    "svd": {
+        "hf_repo":  SVD_MODEL_ID,
+        "size_gb":  8,
+        "label":    "Stable Video Diffusion 1.1",
+        "tab":      "i2v",
+    },
+    "wan-1.3b": {
+        "hf_repo":  WAN_MODEL_ID_13B,
+        "size_gb":  3,
+        "label":    "Wan2.1-T2V-1.3B",
+        "tab":      "wan",
+    },
+    "wan-14b": {
+        "hf_repo":  WAN_MODEL_ID_14B,
+        "size_gb":  28,
+        "label":    "Wan2.1-T2V-14B",
+        "tab":      "wan",
+    },
+}
+
+HF_CACHE = MODEL_DIR / "hf_cache"
+
+def _hf_repo_to_cache_name(hf_repo: str) -> str:
+    """Convert 'org/name' → 'models--org--name' (HuggingFace cache convention)."""
+    return "models--" + hf_repo.replace("/", "--")
+
+
+def _is_model_downloaded(hf_repo: str) -> bool:
+    """Return True if the model has at least one complete snapshot in HF cache."""
+    cache_name = _hf_repo_to_cache_name(hf_repo)
+    snap_dir = HF_CACHE / cache_name / "snapshots"
+    if not snap_dir.exists():
+        return False
+    # Any non-empty snapshot dir = downloaded
+    for snap in snap_dir.iterdir():
+        if snap.is_dir() and any(snap.iterdir()):
+            return True
+    return False
+
+
+# Active download jobs keyed by model_key
+_download_jobs: dict = {}
+_download_lock = threading.Lock()
+
+
+@app.route("/api/model_status", methods=["GET"])
+def api_model_status():
+    """Return download status for all known models."""
+    result = {}
+    for key, info in MODEL_REGISTRY.items():
+        result[key] = {
+            "label":       info["label"],
+            "size_gb":     info["size_gb"],
+            "tab":         info["tab"],
+            "downloaded":  _is_model_downloaded(info["hf_repo"]),
+            "downloading": _download_jobs.get(key, {}).get("active", False),
+            "progress":    _download_jobs.get(key, {}).get("progress", 0),
+        }
+    return jsonify(result)
+
+
+@app.route("/api/download_model/<model_key>", methods=["POST"])
+def api_download_model(model_key):
+    """
+    Start downloading a model in the background.
+    Returns a job token; poll /api/download_status/<model_key> for progress.
+    """
+    if model_key not in MODEL_REGISTRY:
+        return jsonify({"error": f"Unknown model key: {model_key}"}), 400
+
+    info = MODEL_REGISTRY[model_key]
+
+    if _is_model_downloaded(info["hf_repo"]):
+        return jsonify({"status": "already_downloaded"}), 200
+
+    with _download_lock:
+        if _download_jobs.get(model_key, {}).get("active"):
+            return jsonify({"status": "already_downloading"}), 200
+
+        _download_jobs[model_key] = {
+            "active":    True,
+            "progress":  0,
+            "message":   "Starting download…",
+            "error":     None,
+            "done":      False,
+        }
+
+    def _do_download():
+        job = _download_jobs[model_key]
+        try:
+            from huggingface_hub import snapshot_download
+            log.info(f"Downloading model {model_key} ({info['hf_repo']}) …")
+
+            # huggingface_hub doesn't expose per-file progress easily,
+            # so we use a background thread to approximate progress by
+            # watching the cache directory size vs expected size.
+            hf_repo = info["hf_repo"]
+            expected_bytes = info["size_gb"] * 1024 ** 3
+            cache_dir = HF_CACHE / _hf_repo_to_cache_name(hf_repo)
+
+            stop_event = threading.Event()
+
+            def _progress_watcher():
+                while not stop_event.is_set():
+                    try:
+                        total = sum(
+                            f.stat().st_size
+                            for f in cache_dir.rglob("*")
+                            if f.is_file() and not f.name.endswith(".lock")
+                        )
+                        pct = min(int(total / expected_bytes * 100), 99)
+                        job["progress"] = pct
+                        gb_done = total / 1024 ** 3
+                        job["message"] = f"Downloading… {gb_done:.1f} / {info['size_gb']} GB ({pct}%)"
+                    except Exception:
+                        pass
+                    stop_event.wait(2)
+
+            watcher = threading.Thread(target=_progress_watcher, daemon=True)
+            watcher.start()
+
+            snapshot_download(hf_repo, cache_dir=str(HF_CACHE))
+
+            stop_event.set()
+            job["progress"] = 100
+            job["message"]  = "Download complete"
+            job["done"]     = True
+            job["active"]   = False
+            log.info(f"Model {model_key} downloaded successfully.")
+        except Exception as e:
+            job["error"]   = str(e)
+            job["message"] = f"Download failed: {e}"
+            job["active"]  = False
+            log.error(f"Model {model_key} download failed: {e}")
+
+    t = threading.Thread(target=_do_download, daemon=True)
+    t.start()
+
+    return jsonify({"status": "started", "model_key": model_key}), 202
+
+
+@app.route("/api/download_status/<model_key>", methods=["GET"])
+def api_download_status(model_key):
+    """Poll download progress for a model."""
+    if model_key not in MODEL_REGISTRY:
+        return jsonify({"error": f"Unknown model key: {model_key}"}), 400
+    info = MODEL_REGISTRY[model_key]
+    job  = _download_jobs.get(model_key, {})
+    return jsonify({
+        "model_key":   model_key,
+        "label":       info["label"],
+        "size_gb":     info["size_gb"],
+        "downloaded":  _is_model_downloaded(info["hf_repo"]),
+        "downloading": job.get("active", False),
+        "progress":    job.get("progress", 0),
+        "message":     job.get("message", ""),
+        "error":       job.get("error"),
+        "done":        job.get("done", False),
+    })
 
 
 @app.route("/api/status/<job_id>", methods=["GET"])

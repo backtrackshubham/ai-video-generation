@@ -211,6 +211,61 @@
     .gen-btn.green  { background: linear-gradient(135deg, var(--green), var(--green2)); }
     .gen-btn.orange { background: linear-gradient(135deg, var(--orange), var(--orange2)); }
 
+    /* Model download banner */
+    .model-dl-banner {
+      display: none;
+      margin-top: 12px;
+      padding: 14px 16px;
+      background: #1a2a1a;
+      border: 1px solid #2d5a2d;
+      border-radius: 10px;
+      font-size: 0.85rem;
+    }
+    .model-dl-banner.warn {
+      background: #1e1a10;
+      border-color: #6b4c0a;
+    }
+    .model-dl-banner .dl-title {
+      font-weight: 600;
+      color: #facc15;
+      margin-bottom: 6px;
+    }
+    .model-dl-banner .dl-info {
+      color: var(--muted);
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+    .model-dl-banner .dl-prog-wrap {
+      background: var(--surface2);
+      border-radius: 99px;
+      height: 8px;
+      overflow: hidden;
+      margin: 8px 0 6px;
+    }
+    .model-dl-banner .dl-prog-bar {
+      height: 100%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, #16a34a, #22c55e);
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+    .model-dl-banner .dl-prog-label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .btn-dl-model {
+      padding: 8px 20px;
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-dl-model:disabled { opacity: 0.5; cursor: not-allowed; }
+
     /* Progress */
     .status-pill {
       display: inline-block;
@@ -390,6 +445,15 @@
       <div id="t2v-model-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
         Best on GPU with 16+ GB VRAM. On CPU expect very long generation times.
       </div>
+      <div class="model-dl-banner warn" id="t2v-dl-banner">
+        <div class="dl-title">⬇ Model not downloaded</div>
+        <div class="dl-info" id="t2v-dl-info"></div>
+        <div class="dl-prog-wrap" id="t2v-dl-prog-wrap" style="display:none">
+          <div class="dl-prog-bar" id="t2v-dl-prog-bar"></div>
+        </div>
+        <div class="dl-prog-label" id="t2v-dl-prog-label"></div>
+        <button class="btn-dl-model" id="t2v-dl-btn">Download model</button>
+      </div>
 
       <!-- Seed image — shown only for i2v models -->
       <div id="t2v-seed-section">
@@ -534,6 +598,15 @@
       </select>
 
       <button class="gen-btn orange" id="btn-i2v" style="margin-top:20px">Animate Image</button>
+      <div class="model-dl-banner warn" id="i2v-dl-banner" style="margin-top:12px">
+        <div class="dl-title">⬇ Model not downloaded</div>
+        <div class="dl-info" id="i2v-dl-info"></div>
+        <div class="dl-prog-wrap" id="i2v-dl-prog-wrap" style="display:none">
+          <div class="dl-prog-bar" id="i2v-dl-prog-bar"></div>
+        </div>
+        <div class="dl-prog-label" id="i2v-dl-prog-label"></div>
+        <button class="btn-dl-model" id="i2v-dl-btn">Download model</button>
+      </div>
     </div>
 
     <!-- Progress card -->
@@ -731,6 +804,15 @@
       </div>
 
       <button class="gen-btn" style="background:linear-gradient(135deg,#0284c7,#38bdf8);box-shadow:0 4px 15px rgba(56,189,248,0.3)" id="btn-wan">Generate Video</button>
+      <div class="model-dl-banner warn" id="wan-dl-banner" style="margin-top:12px">
+        <div class="dl-title">⬇ Model not downloaded</div>
+        <div class="dl-info" id="wan-dl-info"></div>
+        <div class="dl-prog-wrap" id="wan-dl-prog-wrap" style="display:none">
+          <div class="dl-prog-bar" id="wan-dl-prog-bar"></div>
+        </div>
+        <div class="dl-prog-label" id="wan-dl-prog-label"></div>
+        <button class="btn-dl-model" id="wan-dl-btn">Download model</button>
+      </div>
     </div>
 
     <!-- Progress card -->
@@ -787,6 +869,122 @@
 
 <script>
 const API = '';
+
+// ── Model status cache ────────────────────────────────────────────────────────
+let _modelStatusCache = {};
+
+async function fetchModelStatus() {
+  try {
+    const res = await fetch(`${API}/api/model_status`);
+    _modelStatusCache = await res.json();
+  } catch(e) {
+    console.warn('Could not fetch model status:', e);
+  }
+}
+
+/**
+ * Check if a model is downloaded. If not, show the download banner for that tab.
+ * bannerId  : e.g. 't2v-dl-banner'
+ * modelKey  : e.g. 'cogvideox', 'svd', 'wan-1.3b'
+ * genBtnId  : the generate button to disable while downloading
+ * onReady   : callback to call when the model becomes available
+ */
+async function checkModel(bannerId, modelKey, genBtnId, onReady) {
+  await fetchModelStatus();
+  const info = _modelStatusCache[modelKey];
+  const banner = document.getElementById(bannerId);
+  const genBtn = document.getElementById(genBtnId);
+
+  if (!info) return true; // unknown model, allow generation
+
+  if (info.downloaded) {
+    banner.style.display = 'none';
+    return true;
+  }
+
+  // Show banner
+  banner.style.display = 'block';
+  const infoEl     = document.getElementById(bannerId.replace('-banner', '-info'));
+  const progWrap   = document.getElementById(bannerId.replace('-banner', '-prog-wrap'));
+  const progBar    = document.getElementById(bannerId.replace('-banner', '-prog-bar'));
+  const progLabel  = document.getElementById(bannerId.replace('-banner', '-prog-label'));
+  const dlBtn      = document.getElementById(bannerId.replace('-banner', '-btn'));
+
+  infoEl.textContent = `${info.label} (~${info.size_gb} GB) is not downloaded yet. Download it to use this model.`;
+
+  if (info.downloading) {
+    // Already in progress — attach to progress
+    dlBtn.disabled = true;
+    dlBtn.textContent = 'Downloading…';
+    progWrap.style.display = 'block';
+    genBtn.disabled = true;
+    _pollDownload(modelKey, progBar, progLabel, dlBtn, banner, genBtn, onReady);
+    return false;
+  }
+
+  dlBtn.disabled = false;
+  dlBtn.textContent = 'Download model';
+  progWrap.style.display = 'none';
+  progLabel.textContent = '';
+
+  dlBtn.onclick = async () => {
+    dlBtn.disabled = true;
+    dlBtn.textContent = 'Starting download…';
+    genBtn.disabled = true;
+    progWrap.style.display = 'block';
+    progBar.style.width = '0%';
+
+    try {
+      await fetch(`${API}/api/download_model/${modelKey}`, { method: 'POST' });
+    } catch(e) {
+      progLabel.textContent = 'Failed to start download.';
+      dlBtn.disabled = false;
+      dlBtn.textContent = 'Retry';
+      return;
+    }
+
+    dlBtn.textContent = 'Downloading…';
+    _pollDownload(modelKey, progBar, progLabel, dlBtn, banner, genBtn, onReady);
+  };
+
+  return false;
+}
+
+function _pollDownload(modelKey, progBar, progLabel, dlBtn, banner, genBtn, onReady) {
+  const timer = setInterval(async () => {
+    try {
+      const res  = await fetch(`${API}/api/download_status/${modelKey}`);
+      const data = await res.json();
+
+      progBar.style.width = data.progress + '%';
+      progLabel.textContent = data.message || '';
+
+      if (data.error) {
+        clearInterval(timer);
+        progLabel.textContent = 'Error: ' + data.error;
+        dlBtn.disabled = false;
+        dlBtn.textContent = 'Retry';
+        genBtn.disabled = false;
+        return;
+      }
+
+      if (data.downloaded || data.done) {
+        clearInterval(timer);
+        progBar.style.width = '100%';
+        progLabel.textContent = 'Download complete!';
+        dlBtn.textContent = 'Downloaded ✓';
+        setTimeout(() => {
+          banner.style.display = 'none';
+          genBtn.disabled = false;
+          _modelStatusCache[modelKey] = { ...(_modelStatusCache[modelKey] || {}), downloaded: true };
+          if (onReady) onReady();
+        }, 1200);
+      }
+    } catch(e) {
+      // transient network error, keep polling
+    }
+  }, 2000);
+}
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -854,6 +1052,9 @@ function updateModelUI() {
   document.getElementById('t2v-clips-section').style.display = hasCog ? 'block' : 'none';
   updateClipsHint();
   refreshT2vEstimate();
+  // Check if model is available; show download banner if not
+  const registryKey = T2V_MODEL_REGISTRY_KEY[m] || m;
+  checkModel('t2v-dl-banner', registryKey, 'btn-t2v', () => {});
 }
 
 function updateClipsHint() {
@@ -912,7 +1113,17 @@ async function refreshT2vEstimate() {
 refreshT2vEstimate();
 
 let t2vPollTimer = null;
-document.getElementById('btn-t2v').addEventListener('click', async () => {
+
+// Map frontend model key → backend registry key
+const T2V_MODEL_REGISTRY_KEY = {
+  cogvideox:          'cogvideox',
+  cogvideox15:        'cogvideox15',
+  'cogvideox-i2v':    'cogvideox-i2v',
+  'cogvideox15-i2v':  'cogvideox15-i2v',
+  modelscope:         'modelscope',
+};
+
+async function doT2vGenerate() {
   const prompt   = document.getElementById('t2v-prompt').value.trim();
   const title    = document.getElementById('t2v-title').value.trim();
   const model    = document.getElementById('t2v-model').value;
@@ -924,6 +1135,11 @@ document.getElementById('btn-t2v').addEventListener('click', async () => {
     const seedFile = document.getElementById('t2v-seed-file').files[0];
     if (!seedFile) { alert('Please upload a seed image for the I2V model.'); return; }
   }
+
+  // Check model is downloaded
+  const registryKey = T2V_MODEL_REGISTRY_KEY[model] || model;
+  const ready = await checkModel('t2v-dl-banner', registryKey, 'btn-t2v', () => {});
+  if (!ready) return;
 
   const btn = document.getElementById('btn-t2v');
   btn.disabled = true; btn.textContent = 'Starting…';
@@ -978,7 +1194,8 @@ document.getElementById('btn-t2v').addEventListener('click', async () => {
     document.getElementById('t2v-error-box').innerHTML = `<div class="error-msg">⚠ ${e.message}</div>`;
     btn.disabled = false; btn.textContent = 'Generate Video';
   }
-});
+}
+document.getElementById('btn-t2v').addEventListener('click', doT2vGenerate);
 
 function setT2vPill(status) {
   const pill = document.getElementById('t2v-status-pill');
@@ -1046,6 +1263,10 @@ document.getElementById('btn-i2v').addEventListener('click', async () => {
   const file = document.getElementById('i2v-file').files[0];
   if (!file) { alert('Please upload an image first.'); return; }
   const title = document.getElementById('i2v-title').value.trim();
+
+  // Check model is downloaded
+  const ready = await checkModel('i2v-dl-banner', 'svd', 'btn-i2v', () => {});
+  if (!ready) return;
 
   const btn = document.getElementById('btn-i2v');
   btn.disabled = true; btn.textContent = 'Uploading…';
@@ -1291,6 +1512,8 @@ function updateWanModelUI() {
   const v = document.getElementById('wan-model-variant').value;
   document.getElementById('wan-model-note').textContent = WAN_MODEL_NOTES[v] || '';
   updateWanClipsHint();
+  const wanRegistryKey = v === '14b' ? 'wan-14b' : 'wan-1.3b';
+  checkModel('wan-dl-banner', wanRegistryKey, 'btn-wan', () => {});
 }
 
 function updateWanClipsHint() {
@@ -1340,6 +1563,11 @@ document.getElementById('btn-wan').addEventListener('click', async () => {
   const guidance = parseFloat(document.getElementById('wan-guidance').value) || 5.0;
 
   if (!prompt) { alert('Please enter a prompt.'); return; }
+
+  // Check model is downloaded
+  const wanRegistryKey = variant === '14b' ? 'wan-14b' : 'wan-1.3b';
+  const ready = await checkModel('wan-dl-banner', wanRegistryKey, 'btn-wan', () => {});
+  if (!ready) return;
 
   const btn = document.getElementById('btn-wan');
   btn.disabled = true; btn.textContent = 'Starting…';
@@ -1412,6 +1640,19 @@ async function pollWan(jobId) {
     }
   } catch(e) { console.warn('Wan poll error:', e); }
 }
+
+// ── On page load: check all active-tab models ─────────────────────────────────
+(async () => {
+  await fetchModelStatus();
+  // T2V: check whichever model is currently selected
+  const t2vModel = document.getElementById('t2v-model').value;
+  checkModel('t2v-dl-banner', T2V_MODEL_REGISTRY_KEY[t2vModel] || t2vModel, 'btn-t2v', () => {});
+  // I2V: always SVD
+  checkModel('i2v-dl-banner', 'svd', 'btn-i2v', () => {});
+  // Wan: check selected variant
+  const wanVariant = document.getElementById('wan-model-variant').value;
+  checkModel('wan-dl-banner', wanVariant === '14b' ? 'wan-14b' : 'wan-1.3b', 'btn-wan', () => {});
+})();
 </script>
 </body>
 </html>
