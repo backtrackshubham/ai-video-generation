@@ -1411,37 +1411,37 @@ def api_generate_wan():
 MODEL_REGISTRY = {
     "cogvideox": {
         "hf_repo":  COG_MODEL_ID,
-        "size_gb":  21,
+        "size_gb":  22,
         "label":    "CogVideoX-5B",
         "tab":      "t2v",
     },
     "cogvideox15": {
         "hf_repo":  COG15_MODEL_ID,
-        "size_gb":  20,
+        "size_gb":  31,
         "label":    "CogVideoX-1.5-5B",
         "tab":      "t2v",
     },
     "cogvideox-i2v": {
         "hf_repo":  COG_I2V_MODEL_ID,
-        "size_gb":  20,
+        "size_gb":  22,
         "label":    "CogVideoX-5B-I2V",
         "tab":      "t2v",
     },
     "cogvideox15-i2v": {
         "hf_repo":  COG15_I2V_MODEL_ID,
-        "size_gb":  20,
+        "size_gb":  31,
         "label":    "CogVideoX-1.5-5B-I2V",
         "tab":      "t2v",
     },
     "modelscope": {
         "hf_repo":  MODELSCOPE_MODEL_ID,
-        "size_gb":  4,
+        "size_gb":  33,
         "label":    "ModelScope 1.7B",
         "tab":      "t2v",
     },
     "svd": {
         "hf_repo":  SVD_MODEL_ID,
-        "size_gb":  8,
+        "size_gb":  30,
         "label":    "Stable Video Diffusion 1.1",
         "tab":      "i2v",
     },
@@ -1453,7 +1453,7 @@ MODEL_REGISTRY = {
     },
     "wan-14b": {
         "hf_repo":  WAN_MODEL_ID_14B,
-        "size_gb":  28,
+        "size_gb":  139,
         "label":    "Wan2.1-T2V-14B",
         "tab":      "wan",
     },
