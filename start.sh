@@ -8,7 +8,7 @@ set -e
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV="$BASE_DIR/venv"
 APP="$BASE_DIR/app.py"
-LOG="$BASE_DIR/logs/server.log"
+LOG="$BASE_DIR/gen-logs/server.log"
 PORT="${1:-7860}"
 
 echo "=============================================="

@@ -43,14 +43,12 @@ desktop.ini
 .env
 *.env
 
-# ── T2M-GPT (legacy, cloned by setup_windows.bat) ────────────────────────────
-t2m_gpt/
+# ── Third-party clones (managed by setup_linux.sh / setup_windows.bat) ───────
+cloned-repos/
 
-# ── MDM (cloned by setup, not committed) ─────────────────────────────────────
-mdm/save/
-mdm/body_models/smpl/
-mdm/dataset/HumanML3D/
-mdm/glove.zip
+# ── Symlinks into cloned-repos (convenience links at repo root) ───────────────
+mdm
+t2m_gpt
 
 # ── Image uploads ─────────────────────────────────────────────────────────────
 uploads/
