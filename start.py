@@ -27,6 +27,30 @@ if _IS_WIN:
 else:
     PYTHON = VENV_DIR / "bin" / "python"
 
+# ── Venv isolation guard ──────────────────────────────────────────────────────
+# If start.py is invoked from outside the repo-local venv, re-exec using
+# the repo-local venv's Python so the correct packages are always used.
+if __name__ == "__main__":
+    active_venv = os.environ.get("VIRTUAL_ENV", "")
+    in_repo_venv = PYTHON.exists() and (
+        Path(active_venv).resolve() == VENV_DIR.resolve() if active_venv else False
+    )
+    using_repo_python = Path(sys.executable).resolve() == PYTHON.resolve()
+
+    if not using_repo_python and PYTHON.exists():
+        # Re-exec with the repo-local venv Python
+        if active_venv and Path(active_venv).resolve() != VENV_DIR.resolve():
+            print(f"[start] Foreign venv detected: {active_venv}")
+        print(f"[start] Using repo-local venv: {PYTHON}")
+        clean_env = {k: v for k, v in os.environ.items()
+                     if k not in ("VIRTUAL_ENV", "PYTHONHOME")}
+        if active_venv:
+            path_parts = clean_env.get("PATH", "").split(os.pathsep)
+            path_parts = [p for p in path_parts if not p.startswith(active_venv)]
+            clean_env["PATH"] = os.pathsep.join(path_parts)
+        result = subprocess.run([str(PYTHON)] + sys.argv, env=clean_env)
+        sys.exit(result.returncode)
+
 
 def fail(msg):
     print(f"\n  ERROR: {msg}\n")
