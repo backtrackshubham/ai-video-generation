@@ -80,75 +80,9 @@ def ask_choice(prompt, choices, default=0):
             return int(raw) - 1
         print("  Invalid choice, try again.")
 
-# ── Venv isolation guard ──────────────────────────────────────────────────────
-# If this script is being run from inside a foreign virtual environment
-# (i.e. one that is NOT the repo-local venv/), re-exec using the system
-# Python so all packages end up in the repo-local venv only.
-
-# BASE_DIR is needed by _in_foreign_venv() — defined here, reused below.
-BASE_DIR = Path(__file__).resolve().parent
-
-def _in_foreign_venv() -> bool:
-    """Return True if we are inside a venv that is NOT the repo-local one."""
-    active_venv = os.environ.get("VIRTUAL_ENV", "")
-    if not active_venv:
-        return False                          # no venv active at all
-    repo_venv = str(BASE_DIR / "venv")
-    # Normalise both paths before comparing (handles symlinks, trailing slashes)
-    return Path(active_venv).resolve() != Path(repo_venv).resolve()
-
-
-def _find_system_python() -> str:
-    """
-    Find a Python 3 interpreter that is NOT inside any virtual environment.
-    Tries common locations in order.
-    """
-    candidates = [
-        "/usr/bin/python3",
-        "/usr/local/bin/python3",
-        "python3",
-        "python",
-    ]
-    for c in candidates:
-        resolved = shutil.which(c)
-        if not resolved:
-            continue
-        # Make sure it is not itself inside a venv
-        result = subprocess.run(
-            [resolved, "-c",
-             "import sys; print(sys.prefix == (getattr(sys, 'base_prefix', None) or "
-             "getattr(sys, 'real_prefix', None) or sys.prefix))"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
-        )
-        if result.stdout.strip() == "True":
-            return resolved
-    # Fallback: just use whatever python3 is on PATH
-    return shutil.which("python3") or shutil.which("python") or "python3"
-
-
-# Run this check at import time so it fires before argparse / main()
-if __name__ == "__main__":
-    if _in_foreign_venv():
-        active = os.environ.get("VIRTUAL_ENV", "")
-        print(yellow("[warn]  ") +
-              f"Detected foreign venv: {active}")
-        print(yellow("[warn]  ") +
-              "Re-launching setup.py with system Python to keep dependencies "
-              "localized to this repo's venv/ …")
-        sys_py = _find_system_python()
-        # Unset VIRTUAL_ENV so the subprocess sees a clean environment
-        clean_env = {k: v for k, v in os.environ.items()
-                     if k not in ("VIRTUAL_ENV", "PYTHONHOME")}
-        # Remove the foreign venv's bin dir from PATH
-        path_parts = clean_env.get("PATH", "").split(os.pathsep)
-        path_parts = [p for p in path_parts if not p.startswith(active)]
-        clean_env["PATH"] = os.pathsep.join(path_parts)
-        result = subprocess.run([sys_py] + sys.argv, env=clean_env)
-        sys.exit(result.returncode)
-
 # ── Base paths ────────────────────────────────────────────────────────────────
 
-# BASE_DIR already defined above (needed by venv guard)
+BASE_DIR    = Path(__file__).resolve().parent
 CLONED_DIR  = BASE_DIR / "cloned-repos"
 MDM_DIR     = CLONED_DIR / "mdm"
 T2M_DIR     = CLONED_DIR / "t2m_gpt"
