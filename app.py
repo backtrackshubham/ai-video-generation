@@ -1546,22 +1546,29 @@ def api_download_model(model_key):
             # watching the cache directory size vs expected size.
             hf_repo = info["hf_repo"]
             expected_bytes = info["size_gb"] * 1024 ** 3
-            cache_dir = HF_CACHE / _hf_repo_to_cache_name(hf_repo)
 
             stop_event = threading.Event()
 
             def _progress_watcher():
+                # HF stores files under models--org--name/blobs/ during download.
+                # The directory may not exist yet when the watcher starts, so we
+                # must handle that gracefully and keep retrying.
+                model_cache_dir = HF_CACHE / _hf_repo_to_cache_name(hf_repo)
                 while not stop_event.is_set():
                     try:
-                        total = sum(
-                            f.stat().st_size
-                            for f in cache_dir.rglob("*")
-                            if f.is_file() and not f.name.endswith(".lock")
-                        )
-                        pct = min(int(total / expected_bytes * 100), 99)
-                        job["progress"] = pct
-                        gb_done = total / 1024 ** 3
-                        job["message"] = f"Downloading… {gb_done:.1f} / {info['size_gb']} GB ({pct}%)"
+                        if model_cache_dir.exists():
+                            total = sum(
+                                f.stat().st_size
+                                for f in model_cache_dir.rglob("*")
+                                if f.is_file() and not f.name.endswith(".lock")
+                                and not f.name.endswith(".incomplete")
+                            )
+                            pct = min(int(total / expected_bytes * 100), 99)
+                            job["progress"] = pct
+                            gb_done = total / 1024 ** 3
+                            job["message"] = f"Downloading… {gb_done:.1f} / {info['size_gb']} GB ({pct}%)"
+                        else:
+                            job["message"] = "Connecting to HuggingFace…"
                     except Exception:
                         pass
                     stop_event.wait(2)

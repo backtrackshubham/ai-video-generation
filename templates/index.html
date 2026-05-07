@@ -956,7 +956,7 @@ async function checkModel(bannerId, modelKey, genBtnId, onReady) {
 }
 
 function _pollDownload(modelKey, progBar, progLabel, dlBtn, banner, genBtn, onReady) {
-  const timer = setInterval(async () => {
+  async function _tick() {
     try {
       const res  = await fetch(`${API}/api/download_status/${modelKey}`);
       const data = await res.json();
@@ -965,16 +965,14 @@ function _pollDownload(modelKey, progBar, progLabel, dlBtn, banner, genBtn, onRe
       progLabel.textContent = data.message || '';
 
       if (data.error) {
-        clearInterval(timer);
         progLabel.textContent = 'Error: ' + data.error;
         dlBtn.disabled = false;
         dlBtn.textContent = 'Retry';
         genBtn.disabled = false;
-        return;
+        return; // stop polling
       }
 
       if (data.downloaded || data.done) {
-        clearInterval(timer);
         progBar.style.width = '100%';
         progLabel.textContent = 'Download complete!';
         dlBtn.textContent = 'Downloaded ✓';
@@ -984,11 +982,14 @@ function _pollDownload(modelKey, progBar, progLabel, dlBtn, banner, genBtn, onRe
           _modelStatusCache[modelKey] = { ...(_modelStatusCache[modelKey] || {}), downloaded: true };
           if (onReady) onReady();
         }, 1200);
+        return; // stop polling
       }
     } catch(e) {
       // transient network error, keep polling
     }
-  }, 2000);
+    setTimeout(_tick, 2000); // schedule next poll
+  }
+  _tick(); // fire immediately, then every 2s
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
