@@ -1,0 +1,46 @@
+# ============================================================
+# AI Video Generation — Python Dependencies
+# ============================================================
+
+# --- Core framework ---
+flask>=2.3.0
+flask-cors>=4.0.0
+
+# --- PyTorch (installed separately in setup scripts with CUDA index URL) ---
+# torch>=2.4.0
+# torchvision
+# torchaudio
+
+# --- Diffusion / HuggingFace stack ---
+diffusers>=0.32.0
+transformers>=4.40.0
+accelerate>=0.30.0
+huggingface_hub>=0.23.0
+tokenizers>=0.19.0
+sentencepiece
+
+# --- Numerics ---
+numpy>=1.24,<2.0
+scipy>=1.11.0
+scikit-learn
+
+# --- Image / Video ---
+Pillow
+imageio>=2.28.0
+imageio-ffmpeg
+moviepy<2.0
+opencv-python>=4.8.0
+
+# --- Visualization ---
+matplotlib>=3.7.0
+
+# --- MDM / motion model dependencies ---
+smplx
+chumpy
+einops
+ftfy
+regex
+tqdm
+
+# --- Utilities ---
+gdown
