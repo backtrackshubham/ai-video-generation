@@ -10,6 +10,7 @@ setlocal EnableDelayedExpansion
 ::    - MDM repo + 50-step checkpoint (~1.3 GB)
 ::    - MDM SMPL body model (~100 MB)
 ::    - MDM GloVe / HumanML3D normalization files
+::    - Wan2.1-T2V-1.3B model (~3 GB, pre-downloaded)
 ::    - CogVideoX-5B model (~22 GB, lazy — downloaded on first use)
 ::    - SVD 1.1 model (~8 GB, lazy — downloaded on first use)
 ::
@@ -47,7 +48,9 @@ for %%D in (
     "%ROOT%\outputs\normal-videos"
     "%ROOT%\outputs\i2v-videos"
     "%ROOT%\outputs\stickman-videos"
+    "%ROOT%\outputs\wan-videos"
     "%ROOT%\gen-logs"
+    "%ROOT%\gen-logs\wan-videos"
     "%ROOT%\uploads"
 ) do mkdir %%D 2>nul
 
@@ -107,8 +110,8 @@ echo  pip upgraded.
 :: ════════════════════════════════════════════════════════════
 :: STEP 5 — Install PyTorch 2.3.1 with CUDA 12.1
 :: ════════════════════════════════════════════════════════════
-echo [5/9] Installing PyTorch 2.3.1 + CUDA 12.1 (~2.5 GB)...
-pip install torch==2.3.1 torchvision==0.18.1 ^
+echo [5/10] Installing PyTorch 2.4.0 + CUDA 12.1 (~2.5 GB)...
+pip install torch==2.4.0 torchvision==0.19.0 ^
     --index-url https://download.pytorch.org/whl/cu121 ^
     --quiet
 IF ERRORLEVEL 1 (echo  ERROR: PyTorch install failed. & pause & exit /b 1)
@@ -128,9 +131,9 @@ IF ERRORLEVEL 1 (
 :: ════════════════════════════════════════════════════════════
 :: STEP 6 — Install Python dependencies
 :: ════════════════════════════════════════════════════════════
-echo [6/9] Installing Python dependencies...
+echo [6/10] Installing Python dependencies...
 pip install ^
-    "diffusers>=0.30.0" ^
+    "diffusers>=0.32.0" ^
     "transformers>=4.40.0" ^
     accelerate ^
     sentencepiece ^
@@ -203,7 +206,7 @@ echo  All Python dependencies installed.
 :: ════════════════════════════════════════════════════════════
 :: STEP 7 — Clone MDM (Motion Diffusion Model)
 :: ════════════════════════════════════════════════════════════
-echo [7/9] Setting up MDM (Motion Diffusion Model)...
+echo [7/10] Setting up MDM (Motion Diffusion Model)...
 IF EXIST "%ROOT%\mdm\.git" (
     echo  mdm already cloned, skipping.
 ) ELSE (
@@ -279,9 +282,34 @@ IF EXIST "%ROOT%\mdm\glove\our_vab_data.npy" (
 )
 
 :: ════════════════════════════════════════════════════════════
-:: STEP 8 — Warm up HuggingFace token (optional)
+:: STEP 8 — Pre-download Wan2.1-T2V-1.3B (~3 GB)
 :: ════════════════════════════════════════════════════════════
-echo [8/9] HuggingFace token check...
+echo [8/10] Downloading Wan2.1-T2V-1.3B model (~3 GB)...
+echo  This may take several minutes depending on your connection.
+IF EXIST "%ROOT%\models\hf_cache\models--Wan-AI--Wan2.1-T2V-1.3B\snapshots" (
+    echo  Wan2.1-T2V-1.3B already downloaded, skipping.
+) ELSE (
+    python -c "
+from huggingface_hub import snapshot_download
+import os
+os.environ['HF_HOME'] = r'%ROOT%\models\hf_cache'
+print('  Downloading Wan2.1-T2V-1.3B...')
+snapshot_download('Wan-AI/Wan2.1-T2V-1.3B', cache_dir=r'%ROOT%\models\hf_cache')
+print('  Wan2.1-T2V-1.3B downloaded successfully.')
+"
+    IF ERRORLEVEL 1 (
+        echo  WARNING: Wan2.1-T2V-1.3B download failed.
+        echo  The model will be downloaded automatically on first generation.
+        echo  Ensure you have ~3 GB free disk space and a working internet connection.
+    ) ELSE (
+        echo  Wan2.1-T2V-1.3B downloaded successfully.
+    )
+)
+
+:: ════════════════════════════════════════════════════════════
+:: STEP 9 — HuggingFace token check (optional)
+:: ════════════════════════════════════════════════════════════
+echo [9/10] HuggingFace token check...
 echo  CogVideoX-5B (~22 GB) and SVD 1.1 (~8 GB) are downloaded on first use.
 echo  They do NOT require a HuggingFace token (both are public).
 echo  First generation will take extra time for the download.
@@ -291,9 +319,9 @@ echo  or run:  python -c "from diffusers import CogVideoXPipeline; CogVideoXPipe
 echo  (Requires ~22 GB free disk space and a fast internet connection)
 
 :: ════════════════════════════════════════════════════════════
-:: STEP 9 — Verify installation
+:: STEP 10 — Verify installation
 :: ════════════════════════════════════════════════════════════
-echo [9/9] Verifying installation...
+echo [10/10] Verifying installation...
 python -c ^
     "import torch, flask, diffusers, transformers, clip, scipy, smplx; ^
      print('  torch:', torch.__version__); ^
@@ -314,9 +342,10 @@ echo  Setup complete!
 echo ==============================================================
 echo.
 echo  Models downloaded on first use:
-echo    CogVideoX-5B  — ~22 GB  (Tab 1: Text to Video)
-echo    SVD 1.1       — ~8 GB   (Tab 2: Image to Video)
-echo    MDM checkpoint — already downloaded above
+echo    Wan2.1-T2V-1.3B — ~3 GB   (Tab 4: Wan2.1 — pre-downloaded above)
+echo    CogVideoX-5B    — ~22 GB  (Tab 1: Text to Video)
+echo    SVD 1.1         — ~8 GB   (Tab 2: Image to Video)
+echo    MDM checkpoint  — already downloaded above
 echo.
 echo  To start the server:
 echo    start.bat

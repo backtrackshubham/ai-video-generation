@@ -95,6 +95,17 @@
       color: var(--green2);
       border-bottom-color: var(--green2);
     }
+    .tab-btn.tab-cogvx-i2v.active {
+      color: #a78bfa;
+      border-bottom-color: #a78bfa;
+    }
+    .tab-btn.tab-wan.active {
+      color: #38bdf8;
+      border-bottom-color: #38bdf8;
+    }
+    .card.blue h2 { color: #38bdf8; }
+    /* seed image upload (reuse i2v styles, hidden by default) */
+    #t2v-seed-section { display: none; margin-top: 4px; }
 
     /* ── Tab panels ── */
     .tab-panel { display: none; }
@@ -355,6 +366,7 @@
   <button class="tab-btn tab-t2v active"     data-tab="t2v">⚡ Text to Video</button>
   <button class="tab-btn tab-img2vid"         data-tab="i2v">🖼 Image to Video</button>
   <button class="tab-btn tab-stickman"        data-tab="stickman">🦾 Motion Stickman</button>
+  <button class="tab-btn tab-wan"             data-tab="wan">✨ Wan2.1</button>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════════
@@ -369,11 +381,38 @@
 
       <label>Model</label>
       <select id="t2v-model">
-        <option value="cogvideox">CogVideoX-5B — high quality (GPU recommended, ~22 GB)</option>
-        <option value="modelscope">ModelScope 1.7B — fast &amp; CPU-friendly (~3.5 GB)</option>
+        <option value="cogvideox">CogVideoX-5B — text only, ~6s/clip (GPU, ~21 GB)</option>
+        <option value="cogvideox15">CogVideoX-1.5-5B — text only, ~10s/clip (GPU, ~20 GB)</option>
+        <option value="cogvideox-i2v">CogVideoX-5B-I2V — image + text, ~6s/clip (GPU, ~20 GB)</option>
+        <option value="cogvideox15-i2v">CogVideoX-1.5-5B-I2V — image + text, ~10s/clip (GPU, ~20 GB)</option>
+        <option value="modelscope">ModelScope 1.7B — CPU-friendly, has watermarks (~3.5 GB)</option>
       </select>
       <div id="t2v-model-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
         Best on GPU with 16+ GB VRAM. On CPU expect very long generation times.
+      </div>
+
+      <!-- Seed image — shown only for i2v models -->
+      <div id="t2v-seed-section">
+        <label>Seed Image</label>
+        <div class="img-upload-area" id="t2v-seed-upload-area">
+          <input type="file" id="t2v-seed-file" accept="image/png,image/jpeg,image/webp" />
+          <div class="upload-label">
+            <strong>Click to upload</strong> or drag &amp; drop<br>
+            <span style="font-size:0.75rem">PNG, JPEG, WebP — will be resized to 720×480</span>
+          </div>
+          <img id="t2v-seed-preview" alt="preview" />
+        </div>
+      </div>
+
+      <!-- Clip count — shown for CogVideoX models -->
+      <div id="t2v-clips-section">
+        <label>Clips to stitch: <span id="t2v-clips-val">1</span>
+          <span style="font-size:0.72rem;color:var(--muted);margin-left:6px" id="t2v-clips-dur-hint"></span>
+        </label>
+        <div class="range-row">
+          <input type="range" id="t2v-clips" min="1" max="5" value="1" step="1" />
+          <span class="range-val" id="t2v-clips-disp">1</span>
+        </div>
       </div>
 
       <label>Title</label>
@@ -561,6 +600,33 @@
         Best prompts: short human body motion descriptions — walk, run, jump, wave, kick, dance, sit, etc.
       </p>
 
+      <!-- Motion length -->
+      <label>Motion Length: <span id="stickman-length-val">6.0</span>s</label>
+      <div class="range-row">
+        <input type="range" id="stickman-length" min="1" max="9.8" value="6" step="0.2" />
+        <span class="range-val" id="stickman-length-disp">6.0s</span>
+      </div>
+
+      <!-- Guidance scale -->
+      <label>Guidance Scale: <span id="stickman-guidance-val">2.5</span>
+        <span style="font-size:0.72rem;color:var(--muted);margin-left:4px">(text adherence)</span>
+      </label>
+      <div class="range-row">
+        <input type="range" id="stickman-guidance" min="1" max="10" value="2.5" step="0.5" />
+        <span class="range-val" id="stickman-guidance-disp">2.5</span>
+      </div>
+
+      <!-- Seed -->
+      <label>Seed</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" id="stickman-seed" value="10" min="0" max="99999"
+               style="width:110px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--fg)" />
+        <button onclick="document.getElementById('stickman-seed').value=Math.floor(Math.random()*99999)"
+                style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);cursor:pointer;font-size:0.8rem">
+          🎲 Random
+        </button>
+      </div>
+
       <button class="gen-btn green" id="btn-stickman" style="margin-top:16px">Generate Motion Video</button>
     </div>
 
@@ -576,6 +642,20 @@
       <div class="prog-meta">
         <span id="stickman-prog-pct">0%</span>
       </div>
+      <div class="time-grid">
+        <div class="time-cell">
+          <div class="val" id="stickman-tc-elapsed">—</div>
+          <div class="lbl">Elapsed</div>
+        </div>
+        <div class="time-cell">
+          <div class="val" id="stickman-tc-remaining">—</div>
+          <div class="lbl">Remaining</div>
+        </div>
+        <div class="time-cell">
+          <div class="val" id="stickman-tc-live">0s</div>
+          <div class="lbl">Live Timer</div>
+        </div>
+      </div>
       <div class="prog-msg" id="stickman-prog-msg">Waiting to start…</div>
       <div id="stickman-error-box"></div>
     </div>
@@ -586,6 +666,110 @@
       <video id="stickman-output-video" controls loop></video>
       <div class="video-meta" id="stickman-video-meta"></div>
       <a id="stickman-dl-link" class="dl-btn" style="background:var(--green)" download>⬇ Download MP4</a>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     TAB 4: Wan2.1 Text-to-Video
+════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-wan">
+  <div class="panel-inner">
+
+    <!-- Input card -->
+    <div class="card blue">
+      <h2>✨ Wan2.1 <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:6px">Text to Video</span></h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:16px">
+        State-of-the-art open video generation. Supports realistic, anime, cartoon &amp; cinematic styles.
+        T2V-1.3B recommended for 6 GB VRAM GPUs.
+      </p>
+
+      <label>Model variant</label>
+      <select id="wan-model-variant">
+        <option value="1.3b">Wan2.1-T2V-1.3B — consumer GPU, 6 GB VRAM, 480P (~3 GB download)</option>
+        <option value="14b">Wan2.1-T2V-14B — high quality, 16+ GB VRAM, 480P/720P (~28 GB download)</option>
+      </select>
+      <div id="wan-model-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
+        T2V-1.3B: best for Alienware RTX 3060 (6 GB). Uses CPU offloading to leverage system RAM.
+      </div>
+
+      <label>Title</label>
+      <input type="text" id="wan-title" placeholder="e.g. anime-city-rain" />
+
+      <label>Prompt</label>
+      <textarea id="wan-prompt" placeholder="A cyberpunk city at night, neon lights reflecting on wet streets, anime style, cinematic…"></textarea>
+
+      <label>Resolution</label>
+      <select id="wan-resolution">
+        <option value="480p">480P (832×480) — recommended for 6 GB VRAM</option>
+        <option value="720p">720P (1280×720) — requires 12+ GB VRAM</option>
+      </select>
+
+      <label>Clips to stitch: <span id="wan-clips-val">1</span>
+        <span style="font-size:0.72rem;color:var(--muted);margin-left:6px" id="wan-clips-hint"></span>
+      </label>
+      <div class="range-row">
+        <input type="range" id="wan-clips" min="1" max="5" value="1" step="1" />
+        <span class="range-val" id="wan-clips-disp">1</span>
+      </div>
+
+      <label>Inference steps (quality vs speed)</label>
+      <div class="range-row">
+        <input type="range" id="wan-steps" min="10" max="50" value="30" step="5" />
+        <span class="range-val" id="wan-steps-disp">30</span>
+      </div>
+
+      <label>Guidance scale</label>
+      <div class="range-row">
+        <input type="range" id="wan-guidance" min="1" max="10" value="5" step="0.5" />
+        <span class="range-val" id="wan-guidance-disp">5</span>
+      </div>
+
+      <div class="estimate-box" id="wan-estimate-box">
+        Estimated time will appear here.
+      </div>
+
+      <button class="gen-btn" style="background:linear-gradient(135deg,#0284c7,#38bdf8);box-shadow:0 4px 15px rgba(56,189,248,0.3)" id="btn-wan">Generate Video</button>
+    </div>
+
+    <!-- Progress card -->
+    <div class="card hidden" id="wan-progress-card">
+      <h2 style="color:#38bdf8">
+        📊 Progress
+        <span class="status-pill" id="wan-status-pill">queued</span>
+      </h2>
+      <div class="prog-bar-wrap">
+        <div class="prog-bar" style="background:linear-gradient(90deg,#0284c7,#38bdf8)" id="wan-prog-bar"></div>
+      </div>
+      <div class="prog-meta">
+        <span id="wan-prog-pct">0%</span>
+        <span id="wan-prog-frames"></span>
+      </div>
+      <div class="time-grid">
+        <div class="time-cell">
+          <div class="val" id="wan-tc-elapsed">—</div>
+          <div class="lbl">Elapsed</div>
+        </div>
+        <div class="time-cell">
+          <div class="val" id="wan-tc-remaining">—</div>
+          <div class="lbl">Remaining</div>
+        </div>
+        <div class="time-cell">
+          <div class="val" id="wan-tc-estimate">—</div>
+          <div class="lbl">Estimate</div>
+        </div>
+      </div>
+      <div class="prog-msg" id="wan-prog-msg">Waiting to start…</div>
+      <div id="wan-error-box"></div>
+    </div>
+
+    <!-- Output card -->
+    <div class="card hidden" id="wan-output-card">
+      <h2 style="color:#38bdf8">🎬 Output</h2>
+      <video id="wan-output-video" controls loop></video>
+      <div class="video-meta" id="wan-video-meta"></div>
+      <a id="wan-dl-link" class="dl-btn" download>⬇ Download MP4</a>
     </div>
 
   </div>
@@ -638,19 +822,60 @@ bindRange('t2v-steps', 't2v-steps-disp');
 bindRange('t2v-guidance', 't2v-guidance-disp');
 
 const MODEL_NOTES = {
-  cogvideox:   'Best on GPU with 16+ GB VRAM. On CPU expect very long generation times.',
-  modelscope:  'CPU-friendly (~3.5 GB). Good for testing. Lower quality than CogVideoX.',
+  cogvideox:         'Best on GPU with 16+ GB VRAM. ~6s per clip. Use clip stitching for longer videos.',
+  cogvideox15:       'CogVideoX 1.5 — up to 81 frames (~10s/clip). GPU recommended.',
+  'cogvideox-i2v':   'Image + text → video. Upload a seed image. ~6s per clip. GPU recommended.',
+  'cogvideox15-i2v': 'CogVideoX 1.5 I2V — up to 81 frames (~10s/clip) with seed image. GPU recommended.',
+  modelscope:        'CPU-friendly (~3.5 GB). Has Shutterstock watermarks baked in. No clip stitching.',
 };
 const MODEL_LABELS = {
-  cogvideox:  'CogVideoX-5B',
-  modelscope: 'ModelScope 1.7B',
+  cogvideox:         'CogVideoX-5B',
+  cogvideox15:       'CogVideoX-1.5-5B',
+  'cogvideox-i2v':   'CogVideoX-5B-I2V',
+  'cogvideox15-i2v': 'CogVideoX-1.5-5B-I2V',
+  modelscope:        'ModelScope 1.7B',
+};
+// seconds per clip at 8fps for each model
+const MODEL_CLIP_SECS = {
+  cogvideox: 6, cogvideox15: 10,
+  'cogvideox-i2v': 6, 'cogvideox15-i2v': 10,
+  modelscope: 3,
 };
 
-document.getElementById('t2v-model').addEventListener('change', () => {
+function updateModelUI() {
   const m = document.getElementById('t2v-model').value;
   document.getElementById('t2v-model-label').textContent = MODEL_LABELS[m] || m;
   document.getElementById('t2v-model-note').textContent  = MODEL_NOTES[m] || '';
+  // seed image section: only for i2v variants
+  const isI2V = m.endsWith('-i2v');
+  document.getElementById('t2v-seed-section').style.display = isI2V ? 'block' : 'none';
+  // clip stitching: only for cogvideox models (not modelscope)
+  const hasCog = m.startsWith('cogvideox');
+  document.getElementById('t2v-clips-section').style.display = hasCog ? 'block' : 'none';
+  updateClipsHint();
   refreshT2vEstimate();
+}
+
+function updateClipsHint() {
+  const m     = document.getElementById('t2v-model').value;
+  const clips = parseInt(document.getElementById('t2v-clips').value);
+  const secs  = (MODEL_CLIP_SECS[m] || 6) * clips;
+  document.getElementById('t2v-clips-val').textContent      = clips;
+  document.getElementById('t2v-clips-disp').textContent     = clips;
+  document.getElementById('t2v-clips-dur-hint').textContent = clips > 1 ? `≈ ${secs}s total` : '';
+}
+
+document.getElementById('t2v-model').addEventListener('change', updateModelUI);
+document.getElementById('t2v-clips').addEventListener('input', () => { updateClipsHint(); refreshT2vEstimate(); });
+
+// Seed image preview
+document.getElementById('t2v-seed-file').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const prev = document.getElementById('t2v-seed-preview');
+  prev.src = URL.createObjectURL(file);
+  prev.style.display = 'block';
+  document.getElementById('t2v-seed-upload-area').classList.add('has-image');
 });
 
 document.getElementById('t2v-duration').addEventListener('input', () => {
@@ -688,9 +913,17 @@ refreshT2vEstimate();
 
 let t2vPollTimer = null;
 document.getElementById('btn-t2v').addEventListener('click', async () => {
-  const prompt = document.getElementById('t2v-prompt').value.trim();
-  const title  = document.getElementById('t2v-title').value.trim();
+  const prompt   = document.getElementById('t2v-prompt').value.trim();
+  const title    = document.getElementById('t2v-title').value.trim();
+  const model    = document.getElementById('t2v-model').value;
+  const numClips = parseInt(document.getElementById('t2v-clips').value) || 1;
+  const isI2V    = model.endsWith('-i2v');
   if (!prompt) { alert('Please enter a prompt.'); return; }
+
+  if (isI2V) {
+    const seedFile = document.getElementById('t2v-seed-file').files[0];
+    if (!seedFile) { alert('Please upload a seed image for the I2V model.'); return; }
+  }
 
   const btn = document.getElementById('btn-t2v');
   btn.disabled = true; btn.textContent = 'Starting…';
@@ -705,19 +938,36 @@ document.getElementById('btn-t2v').addEventListener('click', async () => {
   document.getElementById('t2v-progress-card').classList.remove('hidden');
 
   try {
-    const res = await fetch(`${API}/api/generate`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        prompt, title,
-        duration_seconds: parseFloat(document.getElementById('t2v-duration').value),
-        fps: 8,
-        num_steps: parseInt(document.getElementById('t2v-steps').value),
-        guidance_scale: parseFloat(document.getElementById('t2v-guidance').value),
-        model: document.getElementById('t2v-model').value,
-      }),
-    });
-    const data = await res.json();
+    let res, data;
+
+    if (isI2V) {
+      // multipart/form-data for image upload
+      const fd = new FormData();
+      fd.append('prompt', prompt);
+      fd.append('title', title);
+      fd.append('model', model);
+      fd.append('num_clips', numClips);
+      fd.append('duration_seconds', document.getElementById('t2v-duration').value);
+      fd.append('fps', '8');
+      fd.append('num_steps', document.getElementById('t2v-steps').value);
+      fd.append('guidance_scale', document.getElementById('t2v-guidance').value);
+      fd.append('image', document.getElementById('t2v-seed-file').files[0]);
+      res = await fetch(`${API}/api/generate_cogvx_i2v`, { method: 'POST', body: fd });
+    } else {
+      res = await fetch(`${API}/api/generate`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          prompt, title, model, num_clips: numClips,
+          duration_seconds: parseFloat(document.getElementById('t2v-duration').value),
+          fps: 8,
+          num_steps: parseInt(document.getElementById('t2v-steps').value),
+          guidance_scale: parseFloat(document.getElementById('t2v-guidance').value),
+        }),
+      });
+    }
+
+    data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');
 
     document.getElementById('t2v-tc-estimate').textContent = data.estimate ? data.estimate.display : '—';
@@ -877,10 +1127,40 @@ async function pollI2v(jobId) {
 // TAB 3 — Motion Stickman (MDM)
 // ═══════════════════════════════════════════════════════════════════════════════
 let stickmanPollTimer = null;
+let stickmanLiveTimer = null;
+let stickmanStartTime = null;
+
+function startStickmanLiveTimer() {
+  stickmanStartTime = Date.now();
+  if (stickmanLiveTimer) clearInterval(stickmanLiveTimer);
+  stickmanLiveTimer = setInterval(() => {
+    const secs = Math.floor((Date.now() - stickmanStartTime) / 1000);
+    document.getElementById('stickman-tc-live').textContent = fmtSec(secs);
+  }, 1000);
+}
+
+function stopStickmanLiveTimer() {
+  if (stickmanLiveTimer) { clearInterval(stickmanLiveTimer); stickmanLiveTimer = null; }
+}
+
+// Live-update labels for stickman sliders
+document.getElementById('stickman-length').addEventListener('input', e => {
+  const v = parseFloat(e.target.value).toFixed(1);
+  document.getElementById('stickman-length-val').textContent  = v;
+  document.getElementById('stickman-length-disp').textContent = v + 's';
+});
+document.getElementById('stickman-guidance').addEventListener('input', e => {
+  const v = parseFloat(e.target.value).toFixed(1);
+  document.getElementById('stickman-guidance-val').textContent  = v;
+  document.getElementById('stickman-guidance-disp').textContent = v;
+});
 
 document.getElementById('btn-stickman').addEventListener('click', async () => {
-  const prompt = document.getElementById('stickman-prompt').value.trim();
-  const title  = document.getElementById('stickman-title').value.trim();
+  const prompt        = document.getElementById('stickman-prompt').value.trim();
+  const title         = document.getElementById('stickman-title').value.trim();
+  const motion_length = parseFloat(document.getElementById('stickman-length').value);
+  const guidance_scale= parseFloat(document.getElementById('stickman-guidance').value);
+  const seed          = parseInt(document.getElementById('stickman-seed').value) || 10;
   if (!prompt) { alert('Please enter a motion prompt.'); return; }
 
   const btn = document.getElementById('btn-stickman');
@@ -892,14 +1172,18 @@ document.getElementById('btn-stickman').addEventListener('click', async () => {
   document.getElementById('stickman-prog-bar').style.width = '0%';
   document.getElementById('stickman-prog-pct').textContent = '0%';
   document.getElementById('stickman-prog-msg').textContent = 'Queued…';
+  document.getElementById('stickman-tc-elapsed').textContent   = '—';
+  document.getElementById('stickman-tc-remaining').textContent  = '—';
+  document.getElementById('stickman-tc-live').textContent       = '0s';
   setStickmanPill('queued');
   document.getElementById('stickman-progress-card').classList.remove('hidden');
+  startStickmanLiveTimer();
 
   try {
     const res = await fetch(`${API}/api/generate_stickman`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ prompt, title }),
+      body: JSON.stringify({ prompt, title, motion_length, guidance_scale, seed }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');
@@ -928,21 +1212,26 @@ async function pollStickman(jobId) {
     document.getElementById('stickman-prog-bar').style.width  = pct + '%';
     document.getElementById('stickman-prog-pct').textContent  = pct + '%';
     document.getElementById('stickman-prog-msg').textContent  = job.message || '';
+    document.getElementById('stickman-tc-elapsed').textContent   = fmtSec(job.elapsed_seconds);
+    document.getElementById('stickman-tc-remaining').textContent = job.remaining_seconds > 0 ? fmtSec(job.remaining_seconds) : '—';
 
     if (job.status === 'done' && job.video_file) {
       clearInterval(stickmanPollTimer);
+      stopStickmanLiveTimer();
+      document.getElementById('stickman-tc-live').textContent = fmtSec(job.elapsed_seconds);
       document.getElementById('btn-stickman').disabled = false;
       document.getElementById('btn-stickman').textContent = 'Generate Motion Video';
       const url = `${API}/api/video/${job.video_file}`;
       document.getElementById('stickman-output-video').src = url;
       document.getElementById('stickman-dl-link').href = url;
       document.getElementById('stickman-dl-link').download = job.video_file;
-      document.getElementById('stickman-video-meta').textContent = `${job.message}`;
+      document.getElementById('stickman-video-meta').textContent = `${fmtSec(job.elapsed_seconds)} generation · ${job.prompt}`;
       document.getElementById('stickman-output-card').classList.remove('hidden');
       refreshHistory();
     }
     if (job.status === 'failed') {
       clearInterval(stickmanPollTimer);
+      stopStickmanLiveTimer();
       document.getElementById('btn-stickman').disabled = false;
       document.getElementById('btn-stickman').textContent = 'Generate Motion Video';
       document.getElementById('stickman-error-box').innerHTML = `<div class="error-msg">⚠ ${job.error || 'Generation failed.'}</div>`;
@@ -986,6 +1275,143 @@ async function checkServer() {
 checkServer();
 setInterval(checkServer, 15000);
 refreshHistory();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 4 — Wan2.1 Text-to-Video
+// ═══════════════════════════════════════════════════════════════════════════════
+bindRange('wan-steps',    'wan-steps-disp');
+bindRange('wan-guidance', 'wan-guidance-disp');
+
+const WAN_MODEL_NOTES = {
+  '1.3b': 'Best for RTX 3060 (6 GB). Uses CPU offloading. ~5s per clip at 480P. ~3 GB download.',
+  '14b':  'High quality. Requires 16+ GB VRAM. 480P and 720P. ~28 GB download.',
+};
+
+function updateWanModelUI() {
+  const v = document.getElementById('wan-model-variant').value;
+  document.getElementById('wan-model-note').textContent = WAN_MODEL_NOTES[v] || '';
+  updateWanClipsHint();
+}
+
+function updateWanClipsHint() {
+  const clips = parseInt(document.getElementById('wan-clips').value);
+  const secsPerClip = 5; // Wan2.1: 81 frames @ 16fps ≈ 5s
+  document.getElementById('wan-clips-val').textContent  = clips;
+  document.getElementById('wan-clips-disp').textContent = clips;
+  document.getElementById('wan-clips-hint').textContent = clips > 1 ? `≈ ${clips * secsPerClip}s total` : '';
+  updateWanEstimate();
+}
+
+function updateWanEstimate() {
+  const clips = parseInt(document.getElementById('wan-clips').value) || 1;
+  const steps = parseInt(document.getElementById('wan-steps').value) || 30;
+  const variant = document.getElementById('wan-model-variant').value;
+  // rough estimate: 1.3B ~6s/step on RTX 3060
+  const secsPerStep = (variant === '14b') ? 15 : 6;
+  const low  = Math.round(steps * clips * secsPerStep * 0.8);
+  const high = Math.round(steps * clips * secsPerStep * 1.3);
+  const fmt  = s => s < 60 ? `${s}s` : `${Math.floor(s/60)}m ${s%60}s`;
+  document.getElementById('wan-estimate-box').innerHTML =
+    `<strong>${fmt(low)} – ${fmt(high)}</strong>` +
+    `<div class="detail">${81*clips} frames · ${steps} steps · ${variant.toUpperCase()}</div>`;
+  document.getElementById('wan-tc-estimate').textContent = `${fmt(low)} – ${fmt(high)}`;
+}
+
+document.getElementById('wan-model-variant').addEventListener('change', updateWanModelUI);
+document.getElementById('wan-clips').addEventListener('input', updateWanClipsHint);
+document.getElementById('wan-steps').addEventListener('input', updateWanEstimate);
+document.getElementById('wan-resolution').addEventListener('change', updateWanEstimate);
+updateWanModelUI();
+
+function setWanPill(status) {
+  const pill = document.getElementById('wan-status-pill');
+  pill.className = 'status-pill ' + status;
+  pill.textContent = status.replace('_', ' ');
+}
+
+let wanPollTimer = null;
+document.getElementById('btn-wan').addEventListener('click', async () => {
+  const prompt   = document.getElementById('wan-prompt').value.trim();
+  const title    = document.getElementById('wan-title').value.trim();
+  const variant  = document.getElementById('wan-model-variant').value;
+  const res_val  = document.getElementById('wan-resolution').value;
+  const clips    = parseInt(document.getElementById('wan-clips').value) || 1;
+  const steps    = parseInt(document.getElementById('wan-steps').value) || 30;
+  const guidance = parseFloat(document.getElementById('wan-guidance').value) || 5.0;
+
+  if (!prompt) { alert('Please enter a prompt.'); return; }
+
+  const btn = document.getElementById('btn-wan');
+  btn.disabled = true; btn.textContent = 'Starting…';
+  if (wanPollTimer) clearInterval(wanPollTimer);
+
+  document.getElementById('wan-output-card').classList.add('hidden');
+  document.getElementById('wan-error-box').innerHTML = '';
+  document.getElementById('wan-prog-bar').style.width = '0%';
+  document.getElementById('wan-prog-pct').textContent = '0%';
+  document.getElementById('wan-prog-msg').textContent = 'Queued…';
+  setWanPill('queued');
+  document.getElementById('wan-progress-card').classList.remove('hidden');
+
+  try {
+    const res = await fetch(`${API}/api/generate_wan`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        prompt, title,
+        model_variant: variant,
+        resolution: res_val,
+        num_clips: clips,
+        num_steps: steps,
+        guidance_scale: guidance,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+    document.getElementById('wan-prog-frames').textContent = data.estimate ? `${data.estimate.frames} frames` : '';
+    btn.textContent = 'Generating…';
+    wanPollTimer = setInterval(() => pollWan(data.job_id), 2000);
+  } catch(e) {
+    document.getElementById('wan-error-box').innerHTML = `<div class="error-msg">⚠ ${e.message}</div>`;
+    btn.disabled = false; btn.textContent = 'Generate Video';
+  }
+});
+
+async function pollWan(jobId) {
+  try {
+    const res = await fetch(`${API}/api/status/${jobId}`);
+    const job = await res.json();
+
+    setWanPill(job.status);
+    const pct = job.progress || 0;
+    document.getElementById('wan-prog-bar').style.width  = pct + '%';
+    document.getElementById('wan-prog-pct').textContent  = pct + '%';
+    document.getElementById('wan-prog-msg').textContent  = job.message || '';
+    document.getElementById('wan-tc-elapsed').textContent   = fmtSec(job.elapsed_seconds);
+    document.getElementById('wan-tc-remaining').textContent = fmtSec(job.remaining_seconds);
+
+    if (job.status === 'done' && job.video_file) {
+      clearInterval(wanPollTimer);
+      document.getElementById('btn-wan').disabled = false;
+      document.getElementById('btn-wan').textContent = 'Generate Video';
+      const url = `${API}/api/video/${job.video_file}`;
+      document.getElementById('wan-output-video').src = url;
+      document.getElementById('wan-dl-link').href = url;
+      document.getElementById('wan-dl-link').download = job.video_file;
+      document.getElementById('wan-video-meta').textContent = `${job.elapsed_seconds}s generation · ${job.prompt}`;
+      document.getElementById('wan-output-card').classList.remove('hidden');
+      refreshHistory();
+    }
+    if (job.status === 'failed') {
+      clearInterval(wanPollTimer);
+      document.getElementById('btn-wan').disabled = false;
+      document.getElementById('btn-wan').textContent = 'Generate Video';
+      document.getElementById('wan-error-box').innerHTML = `<div class="error-msg">⚠ ${job.error || 'Generation failed.'}</div>`;
+      refreshHistory();
+    }
+  } catch(e) { console.warn('Wan poll error:', e); }
+}
 </script>
 </body>
 </html>
