@@ -68,32 +68,11 @@ info "Activated: $VIRTUAL_ENV"
 section "Installing Python dependencies"
 pip install --upgrade pip --quiet
 
-pip install \
-    "numpy>=1.24,<2.0" \
-    "flask>=2.3.0" \
-    "flask-cors>=4.0.0" \
-    "torch>=2.4.0" torchvision torchaudio \
-    "diffusers>=0.32.0" \
-    "accelerate>=0.30.0" \
-    "transformers>=4.40.0" \
-    "huggingface_hub>=0.23.0" \
-    "tokenizers>=0.19.0" \
-    sentencepiece \
-    "imageio>=2.28.0" imageio-ffmpeg \
-    "moviepy<2.0" \
-    "scipy>=1.11.0" \
-    scikit-learn \
-    "matplotlib>=3.7.0" \
-    smplx \
-    chumpy \
-    ftfy \
-    regex \
-    gdown \
-    Pillow \
-    tqdm \
-    einops \
-    opencv-python \
-    --quiet
+# Install PyTorch first (CPU build — no GPU on this machine)
+pip install "torch>=2.4.0" torchvision torchaudio --quiet
+
+# Install all other dependencies from requirements.txt
+pip install -r "$BASE_DIR/requirements.txt" --quiet
 
 pip install git+https://github.com/openai/CLIP.git --quiet
 
