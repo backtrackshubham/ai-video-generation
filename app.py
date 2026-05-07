@@ -38,8 +38,8 @@ LOG_VIDEO_DIR        = LOG_DIR / "normal-videos"
 LOG_STICKMAN_DIR     = LOG_DIR / "stickman-videos"
 LOG_I2V_DIR          = LOG_DIR / "i2v-videos"
 LOG_WAN_DIR          = LOG_DIR / "wan-videos"
-T2M_REPO             = BASE_DIR / "t2m_gpt"
-MDM_REPO             = BASE_DIR / "mdm"
+T2M_REPO             = BASE_DIR / "cloned-repos" / "t2m_gpt"
+MDM_REPO             = BASE_DIR / "cloned-repos" / "mdm"
 UPLOAD_DIR           = BASE_DIR / "uploads"
 
 for d in (OUTPUT_VIDEO_DIR, OUTPUT_STICKMAN_DIR, OUTPUT_I2V_DIR, OUTPUT_WAN_DIR,

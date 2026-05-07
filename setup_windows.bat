@@ -52,6 +52,7 @@ for %%D in (
     "%ROOT%\gen-logs"
     "%ROOT%\gen-logs\wan-videos"
     "%ROOT%\uploads"
+    "%ROOT%\cloned-repos"
 ) do mkdir %%D 2>nul
 
 :: ════════════════════════════════════════════════════════════
@@ -204,31 +205,45 @@ else:
 echo  All Python dependencies installed.
 
 :: ════════════════════════════════════════════════════════════
-:: STEP 7 — Clone MDM (Motion Diffusion Model)
+:: STEP 7 — Clone MDM and T2M-GPT into cloned-repos\
 :: ════════════════════════════════════════════════════════════
-echo [7/10] Setting up MDM (Motion Diffusion Model)...
-IF EXIST "%ROOT%\mdm\.git" (
-    echo  mdm already cloned, skipping.
+echo [7/10] Setting up cloned repos (MDM + T2M-GPT)...
+
+:: ── MDM ──────────────────────────────────────────────────────
+IF EXIST "%ROOT%\cloned-repos\mdm\.git" (
+    echo  cloned-repos\mdm already cloned, skipping.
 ) ELSE (
-    git clone --depth 1 https://github.com/GuyTevet/motion-diffusion-model.git "%ROOT%\mdm"
+    git clone --depth 1 https://github.com/GuyTevet/motion-diffusion-model.git "%ROOT%\cloned-repos\mdm"
     IF ERRORLEVEL 1 (echo  ERROR: Failed to clone MDM. & pause & exit /b 1)
-    echo  MDM cloned.
+    echo  MDM cloned to cloned-repos\mdm.
+)
+
+:: ── T2M-GPT ──────────────────────────────────────────────────
+IF EXIST "%ROOT%\cloned-repos\t2m_gpt\.git" (
+    echo  cloned-repos\t2m_gpt already cloned, skipping.
+) ELSE (
+    git clone --depth 1 https://github.com/Mael-zys/T2M-GPT.git "%ROOT%\cloned-repos\t2m_gpt"
+    IF ERRORLEVEL 1 (
+        echo  WARNING: Failed to clone T2M-GPT. Some features may not work.
+    ) ELSE (
+        echo  T2M-GPT cloned to cloned-repos\t2m_gpt.
+    )
 )
 
 :: ── Download MDM 50-step checkpoint (~1.3 GB) ─────────────────
 echo  Downloading MDM 50-step checkpoint (~1.3 GB)...
-IF EXIST "%ROOT%\mdm\save\humanml_enc_512_50steps\model000750000.pt" (
+IF EXIST "%ROOT%\cloned-repos\mdm\save\humanml_enc_512_50steps\model000750000.pt" (
     echo  Checkpoint already present, skipping.
 ) ELSE (
-    mkdir "%ROOT%\mdm\save\humanml_enc_512_50steps" 2>nul
+    mkdir "%ROOT%\cloned-repos\mdm\save\humanml_enc_512_50steps" 2>nul
     python -c ^
         "import gdown, pathlib; ^
-         out = r'%ROOT%\mdm\save\humanml_enc_512_50steps\model000750000.pt'; ^
+         out = r'%ROOT%\cloned-repos\mdm\save\humanml_enc_512_50steps\model000750000.pt'; ^
          gdown.download('https://drive.google.com/uc?id=1PE0PK8e5a5j6yYkaSi17NpvWAHqiGHLr', out, quiet=False)"
     IF ERRORLEVEL 1 (
         echo  ERROR: Failed to download MDM checkpoint.
         echo  Download manually from https://github.com/GuyTevet/motion-diffusion-model
-        echo  and place at: mdm\save\humanml_enc_512_50steps\model000750000.pt
+        echo  and place at: cloned-repos\mdm\save\humanml_enc_512_50steps\model000750000.pt
         pause & exit /b 1
     )
     echo  MDM checkpoint downloaded.
@@ -236,32 +251,32 @@ IF EXIST "%ROOT%\mdm\save\humanml_enc_512_50steps\model000750000.pt" (
 
 :: ── Download SMPL body model ──────────────────────────────────
 echo  Downloading SMPL body model...
-IF EXIST "%ROOT%\mdm\body_models\smpl\SMPL_NEUTRAL.pkl" (
+IF EXIST "%ROOT%\cloned-repos\mdm\body_models\smpl\SMPL_NEUTRAL.pkl" (
     echo  SMPL already present, skipping.
 ) ELSE (
-    mkdir "%ROOT%\mdm\body_models\smpl" 2>nul
+    mkdir "%ROOT%\cloned-repos\mdm\body_models\smpl" 2>nul
     python -c ^
         "import gdown, pathlib; ^
-         out = r'%ROOT%\mdm\body_models\smpl\SMPL_NEUTRAL.pkl'; ^
+         out = r'%ROOT%\cloned-repos\mdm\body_models\smpl\SMPL_NEUTRAL.pkl'; ^
          gdown.download('https://drive.google.com/uc?id=1INYlGA76ak_cKGzvpOV2Pe6X4oLCDg7n', out, quiet=False)"
     IF ERRORLEVEL 1 (
         echo  ERROR: Failed to download SMPL. Manual download required.
         echo  See: https://smpl.is.tue.mpg.de/ (free registration required)
-        echo  Place SMPL_NEUTRAL.pkl at: mdm\body_models\smpl\SMPL_NEUTRAL.pkl
+        echo  Place SMPL_NEUTRAL.pkl at: cloned-repos\mdm\body_models\smpl\SMPL_NEUTRAL.pkl
         echo  Continuing without SMPL — stickman tab may not work.
     )
 )
 
 :: ── Download HumanML3D mean/std normalization files ───────────
 echo  Downloading HumanML3D normalization files...
-IF EXIST "%ROOT%\mdm\dataset\t2m_mean.npy" (
+IF EXIST "%ROOT%\cloned-repos\mdm\dataset\t2m_mean.npy" (
     echo  Normalization files already present, skipping.
 ) ELSE (
-    mkdir "%ROOT%\mdm\dataset" 2>nul
+    mkdir "%ROOT%\cloned-repos\mdm\dataset" 2>nul
     python -c ^
         "import gdown; ^
-         gdown.download('https://drive.google.com/uc?id=1tX79xk0fflp07EZ660Xz1RAFE33iEyJR', r'%ROOT%\mdm\dataset\t2m_mean.npy', quiet=False); ^
-         gdown.download('https://drive.google.com/uc?id=1tX79xk0fflp07EZ660Xz1RAFE33iEyJR', r'%ROOT%\mdm\dataset\t2m_std.npy',  quiet=False)"
+         gdown.download('https://drive.google.com/uc?id=1tX79xk0fflp07EZ660Xz1RAFE33iEyJR', r'%ROOT%\cloned-repos\mdm\dataset\t2m_mean.npy', quiet=False); ^
+         gdown.download('https://drive.google.com/uc?id=1tX79xk0fflp07EZ660Xz1RAFE33iEyJR', r'%ROOT%\cloned-repos\mdm\dataset\t2m_std.npy',  quiet=False)"
     IF ERRORLEVEL 1 (
         echo  WARNING: Failed to download normalization files. Stickman tab may fail.
     )
@@ -269,10 +284,10 @@ IF EXIST "%ROOT%\mdm\dataset\t2m_mean.npy" (
 
 :: ── Download GloVe embeddings for MDM ────────────────────────
 echo  Downloading GloVe / clip embeddings for MDM...
-IF EXIST "%ROOT%\mdm\glove\our_vab_data.npy" (
+IF EXIST "%ROOT%\cloned-repos\mdm\glove\our_vab_data.npy" (
     echo  GloVe already present, skipping.
 ) ELSE (
-    pushd "%ROOT%\mdm"
+    pushd "%ROOT%\cloned-repos\mdm"
     python -c ^
         "import gdown; gdown.download_folder('https://drive.google.com/drive/folders/1bCeS6Sh_mLVTebxIgiUHgdPrroW06mb6', output='glove', quiet=False)"
     IF ERRORLEVEL 1 (
