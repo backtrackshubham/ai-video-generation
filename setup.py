@@ -139,9 +139,9 @@ def install_pytorch(on_windows, use_cuda):
     section("Installing PyTorch")
     if use_cuda:
         if on_windows:
-            info("Installing PyTorch 2.5.1 + CUDA 12.1 (~2.5 GB) ...")
-            pip("install", "torch==2.5.1", "torchvision==0.20.1",
-                "--index-url", "https://download.pytorch.org/whl/cu121")
+            info("Installing PyTorch 2.6.0 + CUDA 12.4 (~2.5 GB) ...")
+            pip("install", "torch==2.6.0", "torchvision==0.21.0",
+                "--index-url", "https://download.pytorch.org/whl/cu124")
         else:
             info("Installing PyTorch (latest stable) + CUDA ...")
             pip("install", "torch", "torchvision", "torchaudio",
