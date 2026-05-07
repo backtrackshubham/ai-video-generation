@@ -11,15 +11,15 @@ Usage:
     python download_models.py --list           # list status only
 
 Available model keys:
-    cogvideox           CogVideoX-5B             (~21 GB)
-    cogvideox15         CogVideoX-1.5-5B         (~20 GB)
-    cogvideox-i2v       CogVideoX-5B-I2V         (~20 GB)
-    cogvideox15-i2v     CogVideoX-1.5-5B-I2V     (~20 GB)
-    modelscope          ModelScope 1.7B           (~4 GB)
-    svd                 Stable Video Diffusion 1.1 (~8 GB)
-    wan-1.3b            Wan2.1-T2V-1.3B          (~3 GB)
-    wan-14b             Wan2.1-T2V-14B            (~28 GB)
-    all                 All models above          (~100+ GB total)
+    cogvideox           CogVideoX-5B              (~22 GB)
+    cogvideox15         CogVideoX-1.5-5B          (~31 GB)
+    cogvideox-i2v       CogVideoX-5B-I2V          (~22 GB)
+    cogvideox15-i2v     CogVideoX-1.5-5B-I2V      (~31 GB)
+    modelscope          ModelScope 1.7B            (~33 GB)
+    svd                 Stable Video Diffusion 1.1 (~30 GB)
+    wan-1.3b            Wan2.1-T2V-1.3B            (~45 GB)
+    wan-14b             Wan2.1-T2V-14B             (~80 GB)
+    all                 All models above           (~300+ GB total)
 """
 
 import os
@@ -47,42 +47,42 @@ def red(t):    return f"\033[0;31m{t}\033[0m" if _ANSI else t
 MODELS = {
     "cogvideox": {
         "hf_repo": "THUDM/CogVideoX-5b",
-        "size_gb": 21,
+        "size_gb": 22,
         "label":   "CogVideoX-5B",
     },
     "cogvideox15": {
         "hf_repo": "THUDM/CogVideoX1.5-5B",
-        "size_gb": 20,
+        "size_gb": 31,
         "label":   "CogVideoX-1.5-5B",
     },
     "cogvideox-i2v": {
         "hf_repo": "THUDM/CogVideoX-5b-I2V",
-        "size_gb": 20,
+        "size_gb": 22,
         "label":   "CogVideoX-5B-I2V",
     },
     "cogvideox15-i2v": {
         "hf_repo": "THUDM/CogVideoX1.5-5B-I2V",
-        "size_gb": 20,
+        "size_gb": 31,
         "label":   "CogVideoX-1.5-5B-I2V",
     },
     "modelscope": {
         "hf_repo": "damo-vilab/text-to-video-ms-1.7b",
-        "size_gb": 4,
+        "size_gb": 33,
         "label":   "ModelScope 1.7B",
     },
     "svd": {
         "hf_repo": "stabilityai/stable-video-diffusion-img2vid-xt",
-        "size_gb": 8,
+        "size_gb": 30,
         "label":   "Stable Video Diffusion 1.1",
     },
     "wan-1.3b": {
-        "hf_repo": "Wan-AI/Wan2.1-T2V-1.3B",
-        "size_gb": 3,
+        "hf_repo": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+        "size_gb": 45,
         "label":   "Wan2.1-T2V-1.3B",
     },
     "wan-14b": {
-        "hf_repo": "Wan-AI/Wan2.1-T2V-14B",
-        "size_gb": 28,
+        "hf_repo": "Wan-AI/Wan2.1-T2V-14B-Diffusers",
+        "size_gb": 80,
         "label":   "Wan2.1-T2V-14B",
     },
 }

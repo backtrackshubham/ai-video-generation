@@ -324,22 +324,20 @@ def download_mdm_assets():
 
 
 def pre_download_wan():
-    section("Pre-downloading Wan2.1-T2V-1.3B (~3 GB)")
-    snap_dir = MODELS_DIR / "hf_cache" / "models--Wan-AI--Wan2.1-T2V-1.3B" / "snapshots"
-    if snap_dir.exists():
+    section("Pre-downloading Wan2.1-T2V-1.3B (~45 GB)")
+    snap_dir = MODELS_DIR / "hf_cache" / "models--Wan-AI--Wan2.1-T2V-1.3B-Diffusers" / "snapshots"
+    if snap_dir.exists() and any(snap_dir.iterdir()):
         info("Wan2.1-T2V-1.3B already downloaded — skipping")
         return
     info("Downloading Wan2.1-T2V-1.3B (this may take several minutes) ...")
-    script = (
-        "from huggingface_hub import snapshot_download; "
-        "import os; "
-        f"os.environ['HF_HOME'] = {str(MODELS_DIR / 'hf_cache')!r}; "
-        "snapshot_download('Wan-AI/Wan2.1-T2V-1.3B', "
-        f"cache_dir={str(MODELS_DIR / 'hf_cache')!r}); "
-        "print('Wan2.1-T2V-1.3B downloaded.')"
-    )
-    result = run([str(PYTHON), "-c", script], check=False)
-    if result.returncode != 0:
+    try:
+        run([str(PYTHON), "-c",
+             "from huggingface_hub import snapshot_download; "
+             "snapshot_download('Wan-AI/Wan2.1-T2V-1.3B-Diffusers', "
+             f"cache_dir=r'{MODELS_DIR / 'hf_cache'}'); "
+             "print('Wan2.1-T2V-1.3B downloaded.')"
+             ])
+    except Exception:
         warn("Wan2.1-T2V-1.3B download failed — it will be downloaded on first use.")
 
 
@@ -453,7 +451,7 @@ def main():
     # ── 3. Wan2.1 pre-download ────────────────────────────────────────────────
     if not args.skip_wan and not yes:
         pre_dl_wan = ask(
-            "Pre-download Wan2.1-T2V-1.3B model now? (~3 GB, can be skipped and downloaded on first use)",
+            "Pre-download Wan2.1-T2V-1.3B model now? (~45 GB, can be skipped and downloaded on first use)",
             default=True
         )
     else:
