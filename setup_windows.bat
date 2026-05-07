@@ -134,25 +134,30 @@ IF ERRORLEVEL 1 (
 :: ════════════════════════════════════════════════════════════
 echo [6/10] Installing Python dependencies...
 pip install ^
+    "numpy>=1.24,<2.0" ^
     "diffusers>=0.32.0" ^
     "transformers>=4.40.0" ^
-    accelerate ^
+    "accelerate>=0.30.0" ^
+    "huggingface_hub>=0.23.0" ^
+    "tokenizers>=0.19.0" ^
     sentencepiece ^
     flask ^
     flask-cors ^
-    imageio ^
+    "imageio>=2.28.0" ^
     imageio-ffmpeg ^
-    moviepy ^
-    opencv-python ^
-    scipy ^
+    "moviepy<2.0" ^
+    "opencv-python>=4.8.0" ^
+    "scipy>=1.11.0" ^
     scikit-learn ^
-    matplotlib ^
+    "matplotlib>=3.7.0" ^
     smplx ^
     ftfy ^
     regex ^
     tqdm ^
     gdown ^
     chumpy ^
+    einops ^
+    Pillow ^
     --quiet
 IF ERRORLEVEL 1 (echo  ERROR: Dependency install failed. & pause & exit /b 1)
 
