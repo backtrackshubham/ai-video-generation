@@ -79,8 +79,8 @@ def main():
         print(f"  URL  : http://localhost:{port}")
     else:
         hostname = subprocess.run(
-            ["hostname", "-f"], capture_output=True, text=True
-        ).stdout.strip() or "localhost"
+            ["hostname", "-f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        ).stdout.decode().strip() or "localhost"
         print(f"  URL  : http://{hostname}:{port}")
         print(f"  URL  : http://localhost:{port}  (local)")
 
