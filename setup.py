@@ -143,12 +143,13 @@ def install_pytorch(on_windows, use_cuda):
             pip("install", "torch==2.6.0", "torchvision==0.21.0",
                 "--index-url", "https://download.pytorch.org/whl/cu124")
         else:
-            info("Installing PyTorch (latest stable) + CUDA ...")
-            pip("install", "torch", "torchvision", "torchaudio",
+            info("Installing PyTorch 2.6.0 + CUDA 12.1 ...")
+            pip("install", "torch==2.6.0", "torchvision==0.21.0", "torchaudio==2.6.0",
                 "--index-url", "https://download.pytorch.org/whl/cu121")
     else:
-        info("Installing PyTorch (CPU-only) ...")
-        pip("install", "torch>=2.4.0", "torchvision", "torchaudio")
+        info("Installing PyTorch 2.6.0 CPU-only (from official PyTorch index) ...")
+        pip("install", "torch==2.6.0", "torchvision==0.21.0", "torchaudio==2.6.0",
+            "--index-url", "https://download.pytorch.org/whl/cpu")
 
     # Verify
     result = run([str(PYTHON), "-c",
