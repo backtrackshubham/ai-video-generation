@@ -940,10 +940,15 @@
 
       <label style="margin-top:14px">TTS Voice</label>
       <select id="story-voice">
-        <option value="default_female">Default Female (Marathi reference → Hindi output)</option>
-        <option value="default_male">Default Male (Marathi reference → Hindi output)</option>
+        <optgroup label="MMS-TTS Hindi — no login required">
+          <option value="mms_hindi" selected>MMS-TTS Hindi (Facebook, no HF login needed)</option>
+        </optgroup>
+        <optgroup label="IndicF5 — requires HF login (better quality)">
+          <option value="default_female">IndicF5 Female (Marathi ref → Hindi, natural voice)</option>
+          <option value="default_male">IndicF5 Male (Marathi ref → Hindi, natural voice)</option>
+        </optgroup>
       </select>
-      <div style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">⚡ Recommended VRAM: 4 GB (IndicF5). Runs on CPU. Hindi output via cross-lingual voice cloning.</div>
+      <div id="story-voice-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">⚡ Recommended VRAM: CPU-friendly (~1 GB). No HF login needed. Run: huggingface-cli login for IndicF5 options.</div>
 
       <div id="story-dl-banner" class="model-dl-banner hidden"></div>
 
@@ -1832,6 +1837,17 @@ async function pollWan(jobId) {
 })();
 
 // ── TAB 5 — Story Video ───────────────────────────────────────────────────────
+
+const STORY_VOICE_NOTES = {
+  mms_hindi:      '⚡ Recommended VRAM: CPU-friendly (~1 GB). No HF login needed. Slightly robotic but works out of the box.',
+  default_female: '⚡ Recommended VRAM: 4 GB (IndicF5). Requires HF login. Natural female Hindi voice via cross-lingual cloning.',
+  default_male:   '⚡ Recommended VRAM: 4 GB (IndicF5). Requires HF login. Natural male Hindi voice via cross-lingual cloning.',
+};
+
+document.getElementById('story-voice').addEventListener('change', () => {
+  const v = document.getElementById('story-voice').value;
+  document.getElementById('story-voice-note').textContent = STORY_VOICE_NOTES[v] || '';
+});
 
 const STORY_LLM_NOTES = {
   qwen:       '⚡ Recommended VRAM: 5 GB. FP16 weights — best quality. Slow on CPU (~2–3 min).',

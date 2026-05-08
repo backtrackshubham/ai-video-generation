@@ -110,7 +110,12 @@ MODELS = {
     "indic-f5": {
         "hf_repo": "ai4bharat/IndicF5",
         "size_gb": 2,
-        "label":   "IndicF5 (Hindi TTS)",
+        "label":   "IndicF5 (Hindi TTS — requires HF login)",
+    },
+    "mms-tts-hindi": {
+        "hf_repo": "facebook/mms-tts-hin",
+        "size_gb": 0.4,
+        "label":   "MMS-TTS Hindi (Hindi TTS — no login needed)",
     },
     # Style LoRAs for SD 1.5 (small ~72 MB each)
     "lora-ghibli": {

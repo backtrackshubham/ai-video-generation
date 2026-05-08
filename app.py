@@ -1750,6 +1750,10 @@ INDIC_VOICE_REFS = {
 }
 INDIC_MODEL_ID = "ai4bharat/IndicF5"
 INDIC_REF_DIR  = MODEL_DIR / "hf_cache" / "indic_refs"
+MMS_HINDI_MODEL_ID = "facebook/mms-tts-hin"
+
+# TTS voices that use IndicF5 (gated); all others use MMS-TTS
+INDIC_VOICES = set(INDIC_VOICE_REFS.keys())
 
 # Pipeline caches
 _sd_pipe_cache    = {}   # key: style
@@ -1930,7 +1934,27 @@ def generate_scene_image(image_prompt: str, style: str, out_path: Path) -> Path:
     return out_path
 
 
-# ── Hindi TTS: IndicF5 ────────────────────────────────────────────────────────
+# ── Hindi TTS: MMS-TTS (no login) + IndicF5 (gated, better quality) ──────────
+
+_mms_tts_cache = {}  # key: "pipe"
+
+def _get_mms_pipe():
+    """Load facebook/mms-tts-hin, cached. No HF login required."""
+    if "pipe" in _mms_tts_cache:
+        return _mms_tts_cache["pipe"]
+
+    log.info(f"Loading MMS-TTS Hindi on {DEVICE}…")
+    from transformers import pipeline as hf_pipeline
+
+    tts = hf_pipeline(
+        "text-to-speech",
+        model=MMS_HINDI_MODEL_ID,
+        device=0 if DEVICE == "cuda" else -1,
+    )
+    _mms_tts_cache["pipe"] = tts
+    log.info("MMS-TTS Hindi ready.")
+    return tts
+
 
 def _ensure_indic_ref(voice_key: str) -> Path:
     """Download reference WAV from HuggingFace if not already cached."""
@@ -1957,7 +1981,7 @@ def _ensure_indic_ref(voice_key: str) -> Path:
 
 
 def _get_indic_pipe():
-    """Load IndicF5 model, cached."""
+    """Load IndicF5 model, cached. Requires HF login."""
     if "pipe" in _indic_tts_cache:
         return _indic_tts_cache["pipe"]
 
@@ -1976,26 +2000,32 @@ def _get_indic_pipe():
 
 
 def generate_hindi_tts(text: str, voice_key: str, out_path: Path) -> Path:
-    """Generate Hindi audio for one scene narration."""
+    """Generate Hindi audio — routes to MMS-TTS or IndicF5 based on voice_key."""
     import soundfile as sf
     import numpy as np
 
-    ref_path = _ensure_indic_ref(voice_key)
-    _, ref_text = INDIC_VOICE_REFS[voice_key]
-
-    tts = _get_indic_pipe()
-    result = tts(
-        text,
-        forward_params={
-            "ref_audio_path": str(ref_path),
-            "ref_text": ref_text,
-        },
-    )
+    if voice_key in INDIC_VOICES:
+        # ── IndicF5 path (gated, better quality) ─────────────────
+        ref_path = _ensure_indic_ref(voice_key)
+        _, ref_text = INDIC_VOICE_REFS[voice_key]
+        tts = _get_indic_pipe()
+        result = tts(
+            text,
+            forward_params={
+                "ref_audio_path": str(ref_path),
+                "ref_text": ref_text,
+            },
+        )
+    else:
+        # ── MMS-TTS Hindi path (no login required) ────────────────
+        tts = _get_mms_pipe()
+        result = tts(text)
 
     audio = np.array(result["audio"])
     if audio.ndim > 1:
         audio = audio[0]
     sf.write(str(out_path), audio, result["sampling_rate"])
+    return out_path
     return out_path
 
 
@@ -2153,8 +2183,8 @@ def api_generate_story():
         return jsonify({"error": "scenes are required"}), 400
     if style not in STYLE_LORAS:
         style = "realistic"
-    if voice not in INDIC_VOICE_REFS:
-        voice = "default_female"
+    if voice not in INDIC_VOICE_REFS and voice != "mms_hindi":
+        voice = "mms_hindi"
 
     job_id = str(uuid.uuid4())
     slug   = slugify(title) if title else f"story-{job_id[:8]}"
