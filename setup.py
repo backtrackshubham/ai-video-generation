@@ -174,9 +174,20 @@ def install_dependencies():
     pip("install", "chumpy", "--no-build-isolation", "--quiet")
     pip("install", "git+https://github.com/openai/CLIP.git", "--quiet")
 
-    # llama-cpp-python: CPU build by default; GPU build uses CMAKE env vars
-    info("Installing llama-cpp-python (CPU build — for CUDA build set CMAKE_ARGS before running setup)…")
-    pip("install", "llama-cpp-python", "--quiet")
+    # llama-cpp-python: optional — needed only for GGUF Q4 LLM option in Story Video tab.
+    # On Windows it may fail due to long path limit (paths >260 chars in the bundled llama.cpp source).
+    # Fix: enable long paths via PowerShell (Admin):
+    #   New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+    # then reboot and re-run setup.py, OR just skip it and use FP16/Phi-3.5 LLM options instead.
+    info("Installing llama-cpp-python (optional — GGUF Q4 LLM for Story Video tab)…")
+    try:
+        pip("install", "llama-cpp-python", "--quiet")
+        info("llama-cpp-python installed.")
+    except SystemExit:
+        warn("llama-cpp-python install failed (likely Windows long path limit).")
+        warn("The app will still work — use 'Qwen2.5-7B FP16' or 'Phi-3.5-Mini' in the Story Video tab.")
+        warn("To fix: enable Windows long paths and re-run setup.py")
+        warn("  PowerShell (Admin): New-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem' -Name 'LongPathsEnabled' -Value 1 -PropertyType DWORD -Force")
 
     info("All dependencies installed")
 
