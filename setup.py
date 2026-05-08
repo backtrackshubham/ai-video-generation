@@ -167,7 +167,7 @@ def install_dependencies():
     req = BASE_DIR / "requirements.txt"
     if not req.exists():
         error(f"requirements.txt not found at {req}")
-    pip("install", "--upgrade", "pip", "--quiet")
+    pip("install", "--upgrade", "pip", "wheel", "setuptools", "--quiet")
     pip("install", "-r", str(req), "--quiet")
     # chumpy has a broken setup.py that tries to import pip internally;
     # --no-build-isolation bypasses the isolated build env that triggers the bug
