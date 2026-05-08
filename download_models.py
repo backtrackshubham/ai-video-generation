@@ -85,6 +85,49 @@ MODELS = {
         "size_gb": 80,
         "label":   "Wan2.1-T2V-14B",
     },
+    # ── Story Video pipeline ──────────────────────────────────────
+    "sd15": {
+        "hf_repo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+        "size_gb": 4,
+        "label":   "Stable Diffusion 1.5 (Story image gen)",
+    },
+    "qwen-7b": {
+        "hf_repo": "Qwen/Qwen2.5-7B-Instruct",
+        "size_gb": 15,
+        "label":   "Qwen2.5-7B-Instruct FP16 (Story scene LLM)",
+    },
+    "qwen-7b-gguf": {
+        "hf_repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
+        "size_gb": 5,
+        "label":   "Qwen2.5-7B-Instruct GGUF Q4 (Story scene LLM — fast on CPU)",
+        "filename": "qwen2.5-7b-instruct-q4_k_m.gguf",
+    },
+    "phi3-mini": {
+        "hf_repo": "microsoft/Phi-3.5-mini-instruct",
+        "size_gb": 8,
+        "label":   "Phi-3.5-Mini-Instruct (Story scene LLM, lightweight)",
+    },
+    "indic-f5": {
+        "hf_repo": "ai4bharat/IndicF5",
+        "size_gb": 2,
+        "label":   "IndicF5 (Hindi TTS)",
+    },
+    # Style LoRAs for SD 1.5 (small ~72 MB each)
+    "lora-ghibli": {
+        "hf_repo": "artificialguybr/studioghibli-redmond-1-5v-studio-ghibli-lora-for-liberteredmond-sd-1-5",
+        "size_gb": 0.1,
+        "label":   "LoRA: Ghibli style",
+    },
+    "lora-cartoon": {
+        "hf_repo": "artificialguybr/cutecartoon-redmond-1-5v-cute-cartoon-lora-for-liberteredmond-sd-1-5",
+        "size_gb": 0.1,
+        "label":   "LoRA: Anime/Cartoon style",
+    },
+    "lora-3d": {
+        "hf_repo": "artificialguybr/3d-redmond-1-5v-3d-render-style-for-liberte-redmond-sd-1-5",
+        "size_gb": 0.1,
+        "label":   "LoRA: Futuristic/Sci-Fi (3D render) style",
+    },
 }
 
 

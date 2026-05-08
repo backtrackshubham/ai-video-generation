@@ -32,18 +32,22 @@ OUTPUT_DIR           = BASE_DIR / "outputs"
 OUTPUT_VIDEO_DIR     = OUTPUT_DIR / "normal-videos"
 OUTPUT_STICKMAN_DIR  = OUTPUT_DIR / "stickman-videos"
 OUTPUT_I2V_DIR       = OUTPUT_DIR / "i2v-videos"
+OUTPUT_STORY_DIR     = OUTPUT_DIR / "story-videos"
 OUTPUT_WAN_DIR       = OUTPUT_DIR / "wan-videos"
 LOG_DIR              = BASE_DIR / "gen-logs"
 LOG_VIDEO_DIR        = LOG_DIR / "normal-videos"
 LOG_STICKMAN_DIR     = LOG_DIR / "stickman-videos"
 LOG_I2V_DIR          = LOG_DIR / "i2v-videos"
 LOG_WAN_DIR          = LOG_DIR / "wan-videos"
+LOG_STORY_DIR        = LOG_DIR / "story-videos"
 T2M_REPO             = BASE_DIR / "cloned-repos" / "t2m_gpt"
 MDM_REPO             = BASE_DIR / "cloned-repos" / "mdm"
 UPLOAD_DIR           = BASE_DIR / "uploads"
 
 for d in (OUTPUT_VIDEO_DIR, OUTPUT_STICKMAN_DIR, OUTPUT_I2V_DIR, OUTPUT_WAN_DIR,
-          LOG_VIDEO_DIR, LOG_STICKMAN_DIR, LOG_I2V_DIR, LOG_WAN_DIR, UPLOAD_DIR):
+          OUTPUT_STORY_DIR,
+          LOG_VIDEO_DIR, LOG_STICKMAN_DIR, LOG_I2V_DIR, LOG_WAN_DIR, LOG_STORY_DIR,
+          UPLOAD_DIR):
     os.makedirs(d, exist_ok=True)
 
 # ── Model caches inside repo ──────────────────────────────────────────────────
@@ -307,11 +311,18 @@ def _make_step_callback(job_id, num_steps, start_time, clip_idx, total_clips, jl
 
 def run_generation(job_id: str, prompt: str, num_frames: int, num_steps: int,
                    guidance_scale: float, slug: str, model: str = "cogvideox",
-                   num_clips: int = 1, image_path: str = None):
+                   num_clips: int = 1, image_path: str = None, prompts: list = None):
     jlog = make_job_logger(slug, LOG_VIDEO_DIR)
     is_i2v = model.endswith("-i2v")
     jlog.info(f"[{job_id}] Starting {model} | prompt='{prompt}' frames={num_frames} "
               f"steps={num_steps} cfg={guidance_scale} clips={num_clips} i2v={is_i2v}")
+
+    # Build per-clip prompt list
+    if not prompts or not isinstance(prompts, list):
+        prompts = [prompt] * num_clips
+    else:
+        while len(prompts) < num_clips:
+            prompts.append(prompts[-1])
 
     try:
         import imageio
@@ -355,6 +366,7 @@ def run_generation(job_id: str, prompt: str, num_frames: int, num_steps: int,
 
     try:
         for clip_idx in range(num_clips):
+            clip_prompt = prompts[clip_idx]
             clip_label = f"Clip {clip_idx+1}/{num_clips} — " if num_clips > 1 else ""
             jobs[job_id].update(
                 status="generating",
@@ -369,7 +381,7 @@ def run_generation(job_id: str, prompt: str, num_frames: int, num_steps: int,
                 if is_i2v:
                     output = pipe(
                         image=seed_image,
-                        prompt=prompt,
+                        prompt=clip_prompt,
                         num_frames=num_frames,
                         num_inference_steps=num_steps,
                         guidance_scale=guidance_scale,
@@ -377,7 +389,7 @@ def run_generation(job_id: str, prompt: str, num_frames: int, num_steps: int,
                     )
                 else:
                     output = pipe(
-                        prompt=prompt,
+                        prompt=clip_prompt,
                         num_frames=num_frames,
                         num_inference_steps=num_steps,
                         guidance_scale=guidance_scale,
@@ -566,7 +578,7 @@ def run_i2v_generation(job_id: str, image_path: str, slug: str,
     try:
         import imageio
         import numpy as np
-        from PIL import Image
+        from PIL import Image as PILImg
     except Exception as e:
         jobs[job_id].update(status="failed", error=str(e), message=f"Import failed: {e}")
         return
@@ -622,6 +634,13 @@ def run_i2v_generation(job_id: str, image_path: str, slug: str,
 
         frames = output.frames[0]
         frames_np = [np.array(f) for f in frames]
+
+        # Save all output frames for inspection
+        preview_dir = OUTPUT_I2V_DIR / f"{slug}-frames"
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        for i, frame in enumerate(frames_np):
+            PILImg.fromarray(frame).save(str(preview_dir / f"frame{i:04d}.jpg"))
+        jlog.info(f"[{job_id}] Saved {len(frames_np)} frames → {preview_dir}")
 
         video_filename = f"{slug}.mp4"
         out_path = OUTPUT_I2V_DIR / video_filename
@@ -968,10 +987,18 @@ def get_wan_pipeline(model_id: str = WAN_MODEL_ID_13B):
 
 def run_wan_generation(job_id: str, prompt: str, num_frames: int, num_steps: int,
                        guidance_scale: float, slug: str, resolution: str = "480p",
-                       num_clips: int = 1, model_id: str = WAN_MODEL_ID_13B):
+                       num_clips: int = 1, model_id: str = WAN_MODEL_ID_13B,
+                       prompts: list = None):
     jlog = make_job_logger(slug, LOG_WAN_DIR)
     jlog.info(f"[{job_id}] Starting Wan2.1 | prompt='{prompt}' frames={num_frames} "
               f"steps={num_steps} cfg={guidance_scale} clips={num_clips} res={resolution}")
+
+    # Build per-clip prompt list
+    if not prompts or not isinstance(prompts, list):
+        prompts = [prompt] * num_clips
+    else:
+        while len(prompts) < num_clips:
+            prompts.append(prompts[-1])
 
     try:
         import imageio
@@ -996,8 +1023,14 @@ def run_wan_generation(job_id: str, prompt: str, num_frames: int, num_steps: int
     start_time = time.time()
     all_clips = []
 
+    # Per-job preview directory for step frames
+    preview_dir = OUTPUT_WAN_DIR / f"{slug}-steps"
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    log.info(f"[{job_id}] Step previews → {preview_dir}")
+
     try:
         for clip_idx in range(num_clips):
+            clip_prompt = prompts[clip_idx]
             clip_label = f"Clip {clip_idx+1}/{num_clips} — " if num_clips > 1 else ""
             jobs[job_id].update(
                 status="generating",
@@ -1024,11 +1057,26 @@ def run_wan_generation(job_id: str, prompt: str, num_frames: int, num_steps: int
                             f"{int(elapsed)}s elapsed, ~{int(remaining)}s remaining",
                 )
                 jlog.info(f"[{job_id}] {clip_label}step {step_ref[0]}/{num_steps} elapsed={int(elapsed)}s")
+                # Save mid-frame preview from latents if available
+                try:
+                    latents = callback_kwargs.get("latents")
+                    if latents is not None and hasattr(pipe_obj, "vae"):
+                        with torch.no_grad():
+                            decoded = pipe_obj.vae.decode(
+                                latents[:, :, latents.shape[2] // 2:latents.shape[2] // 2 + 1] / pipe_obj.vae.config.scaling_factor
+                            ).sample  # (B, C, 1, H, W)
+                        frame = decoded[0, :, 0].float().cpu()
+                        frame = (frame - frame.min()) / (frame.max() - frame.min() + 1e-8)
+                        frame = (frame.permute(1, 2, 0).numpy() * 255).astype("uint8")
+                        fname = f"clip{clip_idx+1:02d}_step{step_ref[0]:04d}.jpg"
+                        PILImg.fromarray(frame).save(str(preview_dir / fname))
+                except Exception:
+                    pass  # preview is best-effort, never block generation
                 return callback_kwargs
 
             with torch.no_grad():
                 output = pipe(
-                    prompt=prompt,
+                    prompt=clip_prompt,
                     num_frames=num_frames,
                     num_inference_steps=num_steps,
                     guidance_scale=guidance_scale,
@@ -1102,6 +1150,7 @@ def api_estimate():
 def api_generate():
     data           = request.get_json(force=True)
     prompt         = data.get("prompt", "").strip()
+    prompts        = data.get("prompts", [])
     title          = data.get("title", "").strip()
     duration       = float(data.get("duration_seconds", 5))
     fps            = int(data.get("fps", 8))
@@ -1110,11 +1159,19 @@ def api_generate():
     model          = data.get("model", "cogvideox").lower().strip()
     num_clips      = max(1, int(data.get("num_clips", 1)))
 
+    # Normalise prompts list — fill missing clips with the first prompt
+    if not isinstance(prompts, list) or not prompts:
+        prompts = [prompt] * num_clips
+    else:
+        prompts = [p.strip() for p in prompts if p.strip()]
+        while len(prompts) < num_clips:
+            prompts.append(prompts[-1])
+
     valid_models = ("cogvideox", "cogvideox15", "modelscope")
     if model not in valid_models:
         model = "cogvideox"
 
-    if not prompt:
+    if not prompts[0]:
         return jsonify({"error": "prompt is required"}), 400
 
     if model in ("cogvideox", "cogvideox15"):
@@ -1154,13 +1211,14 @@ def api_generate():
     if model in ("cogvideox", "cogvideox15"):
         t = threading.Thread(
             target=run_generation,
-            args=(job_id, prompt, num_frames, num_steps, guidance_scale, slug, model, num_clips),
+            args=(job_id, prompts[0], num_frames, num_steps, guidance_scale, slug, model, num_clips),
+            kwargs={"prompts": prompts},
             daemon=True,
         )
     else:
         t = threading.Thread(
             target=run_modelscope_generation,
-            args=(job_id, prompt, num_frames, num_steps, guidance_scale, slug),
+            args=(job_id, prompts[0], num_frames, num_steps, guidance_scale, slug),
             daemon=True,
         )
     t.start()
@@ -1329,6 +1387,7 @@ def api_generate_stickman():
 def api_generate_wan():
     data           = request.get_json(force=True)
     prompt         = data.get("prompt", "").strip()
+    prompts        = data.get("prompts", [])
     title          = data.get("title", "").strip()
     num_steps      = int(data.get("num_steps", 30))
     guidance_scale = float(data.get("guidance_scale", 5.0))
@@ -1336,12 +1395,20 @@ def api_generate_wan():
     num_clips      = max(1, int(data.get("num_clips", 1)))
     model_variant  = data.get("model_variant", "1.3b").lower().strip()
 
+    # Normalise prompts list
+    if not isinstance(prompts, list) or not prompts:
+        prompts = [prompt] * num_clips
+    else:
+        prompts = [p.strip() for p in prompts if p.strip()]
+        while len(prompts) < num_clips:
+            prompts.append(prompts[-1])
+
     if resolution not in ("480p", "720p"):
         resolution = "480p"
 
     model_id = WAN_MODEL_ID_14B if model_variant == "14b" else WAN_MODEL_ID_13B
 
-    if not prompt:
+    if not prompts[0]:
         return jsonify({"error": "prompt is required"}), 400
 
     # Wan2.1 generates 81 frames at 16fps (~5s) per clip
@@ -1391,7 +1458,8 @@ def api_generate_wan():
 
     t = threading.Thread(
         target=run_wan_generation,
-        args=(job_id, prompt, num_frames, num_steps, guidance_scale, slug, resolution, num_clips, model_id),
+        args=(job_id, prompts[0], num_frames, num_steps, guidance_scale, slug, resolution, num_clips, model_id),
+        kwargs={"prompts": prompts},
         daemon=True,
     )
     t.start()
@@ -1637,9 +1705,493 @@ def api_jobs():
     return jsonify(recent)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — Story Video Pipeline
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+STORY_LLM_MODELS = {
+    "qwen":      "Qwen/Qwen2.5-7B-Instruct",
+    "qwen-gguf": "Qwen/Qwen2.5-7B-Instruct-GGUF",   # loaded via llama-cpp-python
+    "phi3":      "microsoft/Phi-3.5-mini-instruct",
+}
+
+# GGUF filename to download from the repo
+STORY_LLM_GGUF_FILE = {
+    "qwen-gguf": "qwen2.5-7b-instruct-q4_k_m.gguf",
+}
+
+SD15_MODEL_ID = "stable-diffusion-v1-5/stable-diffusion-v1-5"
+
+# Style → (LoRA repo, LoRA filename, trigger words prepended to prompt)
+STYLE_LORAS = {
+    "realistic":  (None, None, "photorealistic, highly detailed, 8k"),
+    "ghibli":     ("artificialguybr/studioghibli-redmond-1-5v-studio-ghibli-lora-for-liberteredmond-sd-1-5",
+                   "StudioGhibliRedmond-15V-LiberteRedmond-StdGBRedmAF-StudioGhibli.safetensors",
+                   "StdGBRedmAF, Studio Ghibli style"),
+    "anime":      ("artificialguybr/cutecartoon-redmond-1-5v-cute-cartoon-lora-for-liberteredmond-sd-1-5",
+                   "CuteCartoon15V-LiberteRedmodModel-Cartoon-CuteCartoonAF.safetensors",
+                   "CuteCartoonAF, anime style"),
+    "cartoon":    ("artificialguybr/cutecartoon-redmond-1-5v-cute-cartoon-lora-for-liberteredmond-sd-1-5",
+                   "CuteCartoon15V-LiberteRedmodModel-Cartoon-CuteCartoonAF.safetensors",
+                   "CuteCartoonAF, Cartoon style"),
+    "futuristic": ("artificialguybr/3d-redmond-1-5v-3d-render-style-for-liberte-redmond-sd-1-5",
+                   "3DRedmond-3DRenderStyle-3DRenderAF.safetensors",
+                   "3DRenderAF, futuristic, sleek, neon, cinematic"),
+    "scifi":      ("artificialguybr/3d-redmond-1-5v-3d-render-style-for-liberte-redmond-sd-1-5",
+                   "3DRedmond-3DRenderStyle-3DRenderAF.safetensors",
+                   "3DRenderAF, sci-fi, space, technology, cinematic lighting"),
+}
+
+# IndicF5 reference clips bundled in HF repo
+INDIC_VOICE_REFS = {
+    "default_female": ("MAR_F_WIKI_00001.wav", "A female narrator speaking in a calm, clear voice."),
+    "default_male":   ("MAR_M_WIKI_00001.wav", "A male narrator speaking in a calm, clear voice."),
+}
+INDIC_MODEL_ID = "ai4bharat/IndicF5"
+INDIC_REF_DIR  = MODEL_DIR / "hf_cache" / "indic_refs"
+
+# Pipeline caches
+_sd_pipe_cache    = {}   # key: style
+_llm_cache        = {}   # key: llm name
+_indic_tts_cache  = {}   # key: "pipe"
+
+
+# ── LLM: scene breakdown ──────────────────────────────────────────────────────
+
+def _get_llm_pipe(llm_key: str):
+    """Load LLM pipeline, cached. GGUF variant uses llama-cpp-python."""
+    if llm_key in _llm_cache:
+        return _llm_cache[llm_key]
+
+    if llm_key in STORY_LLM_GGUF_FILE:
+        # ── GGUF path via llama-cpp-python ────────────────────────
+        from llama_cpp import Llama
+        from huggingface_hub import hf_hub_download
+
+        repo_id  = STORY_LLM_MODELS[llm_key]
+        filename = STORY_LLM_GGUF_FILE[llm_key]
+        log.info(f"Downloading/loading GGUF {repo_id}/{filename}…")
+
+        gguf_path = hf_hub_download(repo_id=repo_id, filename=filename)
+        n_gpu = -1 if DEVICE == "cuda" else 0   # -1 = all layers on GPU
+        llm = Llama(
+            model_path=gguf_path,
+            n_ctx=2048,
+            n_gpu_layers=n_gpu,
+            verbose=False,
+        )
+        _llm_cache[llm_key] = ("gguf", llm)
+        log.info(f"GGUF model loaded: {filename}")
+        return _llm_cache[llm_key]
+
+    # ── Transformers path ─────────────────────────────────────────
+    from transformers import pipeline as hf_pipeline, AutoTokenizer, AutoModelForCausalLM
+
+    model_id = STORY_LLM_MODELS.get(llm_key, STORY_LLM_MODELS["qwen"])
+    log.info(f"Loading LLM {model_id} on {DEVICE}…")
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+        device_map="auto" if DEVICE == "cuda" else None,
+        low_cpu_mem_usage=True,
+    )
+    if DEVICE == "cpu":
+        model = model.to("cpu")
+
+    pipe = hf_pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=1024,
+        do_sample=False,
+        temperature=None,
+        top_p=None,
+    )
+    _llm_cache[llm_key] = ("transformers", pipe)
+    log.info(f"LLM {model_id} loaded.")
+    return _llm_cache[llm_key]
+
+
+def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
+    """Call LLM to split script into scenes. Returns list of dicts."""
+    import re as _re
+    backend, pipe = _get_llm_pipe(llm_key)
+
+    system_prompt = (
+        "You are a creative director. Given a story script, break it into exactly "
+        f"{num_scenes} scenes. For each scene output a JSON object with two keys: "
+        '"narration" (the Hindi narration text the voiceover actor will read — write this in Hindi Devanagari script) '
+        'and "image_prompt" (a detailed English prompt for an AI image generator describing the visual). '
+        f'Output a JSON array of exactly {num_scenes} objects and nothing else. No markdown, no explanation.'
+    )
+
+    if backend == "gguf":
+        # llama-cpp-python chat completion
+        response = pipe.create_chat_completion(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": f"Script:\n{script}"},
+            ],
+            max_tokens=1024,
+            temperature=0.0,
+        )
+        result = response["choices"][0]["message"]["content"]
+    else:
+        # transformers pipeline
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": f"Script:\n{script}"},
+        ]
+        tokenizer = pipe.tokenizer
+        if hasattr(tokenizer, "apply_chat_template"):
+            prompt_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        else:
+            prompt_text = f"<s>[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n{script} [/INST]"
+
+        raw = pipe(prompt_text)[0]["generated_text"]
+        result = raw[len(prompt_text):] if raw.startswith(prompt_text) else raw
+
+    match = _re.search(r'\[.*\]', result, _re.DOTALL)
+    if not match:
+        raise ValueError(f"LLM did not return a JSON array. Raw:\n{result[:500]}")
+
+    scenes = json.loads(match.group(0))
+    if not isinstance(scenes, list):
+        raise ValueError("LLM output is not a JSON array.")
+
+    out = []
+    for s in scenes[:num_scenes]:
+        out.append({
+            "narration":    str(s.get("narration", "")),
+            "image_prompt": str(s.get("image_prompt", "")),
+        })
+    while len(out) < num_scenes:
+        out.append({"narration": "", "image_prompt": ""})
+
+    return out
+
+
+# ── Image generation: SD 1.5 + LoRA ──────────────────────────────────────────
+
+def _get_sd_pipe(style: str):
+    """Load SD 1.5 pipeline with style LoRA, cached per style."""
+    if style in _sd_pipe_cache:
+        return _sd_pipe_cache[style]
+
+    from diffusers import StableDiffusionPipeline
+
+    lora_repo, lora_file, _ = STYLE_LORAS.get(style, STYLE_LORAS["realistic"])
+    log.info(f"Loading SD 1.5 for style={style} on {DEVICE}…")
+    dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+
+    pipe = StableDiffusionPipeline.from_pretrained(
+        SD15_MODEL_ID,
+        torch_dtype=dtype,
+        safety_checker=None,
+        requires_safety_checker=False,
+    )
+
+    if lora_repo and lora_file:
+        log.info(f"Loading LoRA {lora_repo}/{lora_file}…")
+        pipe.load_lora_weights(lora_repo, weight_name=lora_file)
+
+    if DEVICE == "cuda":
+        pipe = pipe.to("cuda")
+    pipe.enable_attention_slicing()
+
+    _sd_pipe_cache[style] = pipe
+    log.info(f"SD 1.5 ({style}) ready.")
+    return pipe
+
+
+def generate_scene_image(image_prompt: str, style: str, out_path: Path) -> Path:
+    """Generate a still image for one scene."""
+    from PIL import Image as PILImg  # noqa — ensure available
+
+    lora_repo, lora_file, trigger = STYLE_LORAS.get(style, STYLE_LORAS["realistic"])
+    full_prompt = f"{trigger}, {image_prompt}" if trigger else image_prompt
+    negative    = "blurry, low quality, watermark, signature, text, ugly, deformed"
+
+    pipe = _get_sd_pipe(style)
+
+    with torch.no_grad():
+        result = pipe(
+            prompt=full_prompt,
+            negative_prompt=negative,
+            num_inference_steps=25 if DEVICE == "cuda" else 8,
+            guidance_scale=7.5,
+            width=512,
+            height=512,
+        )
+    result.images[0].save(str(out_path))
+    return out_path
+
+
+# ── Hindi TTS: IndicF5 ────────────────────────────────────────────────────────
+
+def _ensure_indic_ref(voice_key: str) -> Path:
+    """Download reference WAV from HuggingFace if not already cached."""
+    fname, _ = INDIC_VOICE_REFS[voice_key]
+    local_path = INDIC_REF_DIR / fname
+    if local_path.exists():
+        return local_path
+
+    INDIC_REF_DIR.mkdir(parents=True, exist_ok=True)
+    from huggingface_hub import hf_hub_download
+    log.info(f"Downloading IndicF5 reference clip {fname}…")
+    downloaded = hf_hub_download(
+        repo_id=INDIC_MODEL_ID,
+        filename=f"prompts/{fname}",
+        local_dir=str(INDIC_REF_DIR),
+    )
+    src  = Path(downloaded)
+    dest = INDIC_REF_DIR / fname
+    if src != dest:
+        import shutil
+        shutil.copy2(str(src), str(dest))
+    log.info(f"Reference clip saved → {dest}")
+    return dest
+
+
+def _get_indic_pipe():
+    """Load IndicF5 model, cached."""
+    if "pipe" in _indic_tts_cache:
+        return _indic_tts_cache["pipe"]
+
+    log.info(f"Loading IndicF5 TTS on {DEVICE}…")
+    from transformers import pipeline as hf_pipeline
+
+    tts = hf_pipeline(
+        "text-to-speech",
+        model=INDIC_MODEL_ID,
+        device=0 if DEVICE == "cuda" else -1,
+        torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+    )
+    _indic_tts_cache["pipe"] = tts
+    log.info("IndicF5 TTS ready.")
+    return tts
+
+
+def generate_hindi_tts(text: str, voice_key: str, out_path: Path) -> Path:
+    """Generate Hindi audio for one scene narration."""
+    import soundfile as sf
+    import numpy as np
+
+    ref_path = _ensure_indic_ref(voice_key)
+    _, ref_text = INDIC_VOICE_REFS[voice_key]
+
+    tts = _get_indic_pipe()
+    result = tts(
+        text,
+        forward_params={
+            "ref_audio_path": str(ref_path),
+            "ref_text": ref_text,
+        },
+    )
+
+    audio = np.array(result["audio"])
+    if audio.ndim > 1:
+        audio = audio[0]
+    sf.write(str(out_path), audio, result["sampling_rate"])
+    return out_path
+
+
+# ── FFmpeg stitch ─────────────────────────────────────────────────────────────
+
+def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path) -> Path:
+    """Hold each still image for its audio duration, then concat all scenes."""
+    import subprocess
+    import tempfile
+
+    tmp_dir = Path(tempfile.mkdtemp())
+    scene_videos = []
+
+    for i, (img_path, audio_path) in enumerate(zip(scene_images, scene_audios)):
+        # Probe audio duration
+        probe = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(audio_path)],
+            capture_output=True, text=True,
+        )
+        duration = 5.0
+        try:
+            info = json.loads(probe.stdout)
+            for stream in info.get("streams", []):
+                if stream.get("codec_type") == "audio":
+                    duration = float(stream.get("duration", 5.0))
+                    break
+        except Exception:
+            pass
+
+        scene_mp4 = tmp_dir / f"scene_{i:03d}.mp4"
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-loop", "1", "-i", str(img_path),
+            "-i", str(audio_path),
+            "-c:v", "libx264", "-tune", "stillimage",
+            "-c:a", "aac", "-b:a", "128k",
+            "-pix_fmt", "yuv420p",
+            "-vf", "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2",
+            "-shortest",
+            str(scene_mp4),
+        ], check=True)
+        scene_videos.append(scene_mp4)
+
+    concat_list = tmp_dir / "concat.txt"
+    with open(concat_list, "w") as f:
+        for sv in scene_videos:
+            f.write(f"file '{sv}'\n")
+
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0",
+        "-i", str(concat_list),
+        "-c", "copy",
+        str(out_path),
+    ], check=True)
+
+    return out_path
+
+
+# ── Story generation worker ───────────────────────────────────────────────────
+
+def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug: str):
+    jlog = make_job_logger(slug, LOG_STORY_DIR)
+    jlog.info(f"[{job_id}] Story gen | scenes={len(scenes)} style={style} voice={voice}")
+
+    job_dir = OUTPUT_STORY_DIR / slug
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    n = len(scenes)
+    scene_image_paths = []
+    scene_audio_paths = []
+    scene_image_urls  = []
+    start_time = time.time()
+
+    try:
+        # Phase 1: images
+        for i, scene in enumerate(scenes):
+            jobs[job_id].update(
+                status="generating_images",
+                progress=int((i / n) * 40),
+                message=f"Generating image for scene {i+1}/{n}…",
+            )
+            img_path = job_dir / f"scene_{i:03d}.png"
+            generate_scene_image(scene.get("image_prompt", ""), style, img_path)
+            scene_image_paths.append(img_path)
+            scene_image_urls.append(f"/outputs/story/{slug}/scene_{i:03d}.png")
+            jobs[job_id].update(scene_images=scene_image_urls)
+            jlog.info(f"[{job_id}] Scene {i+1} image done")
+
+        # Phase 2: TTS audio
+        for i, scene in enumerate(scenes):
+            jobs[job_id].update(
+                status="generating_audio",
+                progress=40 + int((i / n) * 40),
+                message=f"Generating Hindi voiceover for scene {i+1}/{n}…",
+            )
+            narration = scene.get("narration", "").strip() or "दृश्य।"
+            audio_path = job_dir / f"scene_{i:03d}.wav"
+            generate_hindi_tts(narration, voice, audio_path)
+            scene_audio_paths.append(audio_path)
+            jlog.info(f"[{job_id}] Scene {i+1} audio done")
+
+        # Phase 3: stitch
+        jobs[job_id].update(status="stitching", progress=85, message="Stitching scenes into video…")
+        video_filename = f"{slug}.mp4"
+        out_path = OUTPUT_STORY_DIR / video_filename
+        stitch_story_video(scene_image_paths, scene_audio_paths, out_path)
+
+        elapsed = int(time.time() - start_time)
+        jobs[job_id].update(
+            status="done", progress=100,
+            video_file=video_filename,
+            scene_count=n,
+            message=f"Done in {elapsed}s — {n} scenes",
+            elapsed_seconds=elapsed,
+        )
+        jlog.info(f"[{job_id}] Story done → {out_path} ({elapsed}s)")
+
+    except Exception as e:
+        jlog.error(f"[{job_id}] Story failed: {e}", exc_info=True)
+        jobs[job_id].update(status="failed", error=str(e), message=f"Failed: {e}")
+
+
+# ── Story API routes ──────────────────────────────────────────────────────────
+
+@app.route("/api/story_breakdown", methods=["POST"])
+def api_story_breakdown():
+    data       = request.get_json(force=True)
+    script     = data.get("script", "").strip()
+    num_scenes = max(2, min(8, int(data.get("num_scenes", 4))))
+    llm_key    = data.get("llm", "qwen")
+
+    if not script:
+        return jsonify({"error": "script is required"}), 400
+    if llm_key not in STORY_LLM_MODELS:
+        llm_key = "qwen"
+
+    try:
+        scenes = llm_break_into_scenes(script, num_scenes, llm_key)
+        return jsonify({"scenes": scenes})
+    except Exception as e:
+        log.error(f"Scene breakdown failed: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/generate_story", methods=["POST"])
+def api_generate_story():
+    data   = request.get_json(force=True)
+    scenes = data.get("scenes", [])
+    style  = data.get("style", "realistic").lower().strip()
+    voice  = data.get("voice", "default_female").strip()
+    title  = data.get("title", "").strip()
+
+    if not scenes:
+        return jsonify({"error": "scenes are required"}), 400
+    if style not in STYLE_LORAS:
+        style = "realistic"
+    if voice not in INDIC_VOICE_REFS:
+        voice = "default_female"
+
+    job_id = str(uuid.uuid4())
+    slug   = slugify(title) if title else f"story-{job_id[:8]}"
+
+    jobs[job_id] = {
+        "job_id":          job_id,
+        "type":            "story",
+        "status":          "queued",
+        "progress":        0,
+        "message":         "Queued…",
+        "scene_count":     len(scenes),
+        "scene_images":    [],
+        "video_file":      None,
+        "error":           None,
+        "elapsed_seconds": 0,
+        "created_at":      time.time(),
+        "slug":            slug,
+        "title":           title or slug,
+    }
+
+    threading.Thread(
+        target=run_story_generation,
+        args=(job_id, scenes, style, voice, slug),
+        daemon=True,
+    ).start()
+
+    log.info(f"[{job_id}] Story job: {len(scenes)} scenes, style={style}, voice={voice}")
+    return jsonify({"job_id": job_id}), 202
+
+
+@app.route("/outputs/story/<path:filename>")
+def serve_story_output(filename):
+    return send_from_directory(str(OUTPUT_STORY_DIR), filename)
+
+
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=7860)
     cli_args = parser.parse_args()
     log.info(f"Starting AI Video Generation server on http://0.0.0.0:{cli_args.port}")

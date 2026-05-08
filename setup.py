@@ -173,6 +173,11 @@ def install_dependencies():
     # --no-build-isolation bypasses the isolated build env that triggers the bug
     pip("install", "chumpy", "--no-build-isolation", "--quiet")
     pip("install", "git+https://github.com/openai/CLIP.git", "--quiet")
+
+    # llama-cpp-python: CPU build by default; GPU build uses CMAKE env vars
+    info("Installing llama-cpp-python (CPU build — for CUDA build set CMAKE_ARGS before running setup)…")
+    pip("install", "llama-cpp-python", "--quiet")
+
     info("All dependencies installed")
 
 

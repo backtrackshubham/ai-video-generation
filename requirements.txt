@@ -43,5 +43,10 @@ ftfy
 regex
 tqdm
 
+# --- Story Video pipeline ---
+soundfile          # Hindi TTS audio saving
+safetensors        # LoRA weight loading for SD 1.5
+# llama-cpp-python installed separately in setup.py (needs CUDA/CPU build flags)
+
 # --- Utilities ---
 gdown

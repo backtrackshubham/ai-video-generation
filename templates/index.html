@@ -103,7 +103,29 @@
       color: #38bdf8;
       border-bottom-color: #38bdf8;
     }
-    .card.blue h2 { color: #38bdf8; }
+    .tab-btn.tab-story.active {
+      color: #f59e0b;
+      border-bottom-color: #f59e0b;
+    }
+    .card.amber h2 { color: #f59e0b; }
+    .card.amber { border-top: 3px solid #f59e0b; }
+    .story-scene-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .story-scene-card .scene-header {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+    }
+    .story-scene-card .scene-num {
+      font-weight: 700; font-size: 0.85rem; color: #f59e0b; min-width: 60px;
+    }
+    .story-scene-card textarea { min-height: 60px; margin-bottom: 6px; }
+    .story-scene-card .narration-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 3px; }
+    .scene-img-preview { max-width: 180px; border-radius: 6px; margin-top: 8px; display:none; }
+    .card.amber { border-top: 3px solid #f59e0b; }
     /* seed image upload (reuse i2v styles, hidden by default) */
     #t2v-seed-section { display: none; margin-top: 4px; }
 
@@ -166,6 +188,9 @@
       border-color: var(--accent);
     }
     textarea { min-height: 90px; }
+    .clip-prompt-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+    .clip-prompt-row label { min-width: 52px; padding-top: 8px; font-size: 0.8rem; color: var(--muted); }
+    .clip-prompt-row textarea { flex: 1; min-height: 70px; margin-bottom: 0; }
 
     .range-row {
       display: flex; align-items: center; gap: 10px;
@@ -422,6 +447,7 @@
   <button class="tab-btn tab-img2vid"         data-tab="i2v">🖼 Image to Video</button>
   <button class="tab-btn tab-stickman"        data-tab="stickman">🦾 Motion Stickman</button>
   <button class="tab-btn tab-wan"             data-tab="wan">✨ Wan2.1</button>
+  <button class="tab-btn tab-story"           data-tab="story">📖 Story Video</button>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════════
@@ -482,8 +508,10 @@
       <label>Title</label>
       <input type="text" id="t2v-title" placeholder="e.g. mountain-sunrise" />
 
-      <label>Prompt</label>
-      <textarea id="t2v-prompt" placeholder="A serene mountain lake at sunrise, mist rising over still water, golden light…"></textarea>
+      <label>Prompts <span style="font-size:0.72rem;color:var(--muted)" id="t2v-prompt-hint">(one per clip)</span></label>
+      <div id="t2v-prompts-container">
+        <textarea class="t2v-clip-prompt" data-clip="1" placeholder="Clip 1 — A serene mountain lake at sunrise, mist rising over still water, golden light…"></textarea>
+      </div>
 
       <label>Duration (seconds): <span id="t2v-dur-val">5</span></label>
       <div class="range-row">
@@ -564,6 +592,7 @@
       <p style="font-size:0.8rem;color:var(--muted);margin-bottom:16px">
         Upload a still image and animate it into a short video clip.
       </p>
+      <div style="font-size:0.76rem;color:var(--muted);margin-bottom:14px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">⚡ Recommended VRAM: 8 GB+. SVD 1.1 — animates a still image into 25 frames (~4s). CPU-only is very slow.</div>
 
       <label>Title</label>
       <input type="text" id="i2v-title" placeholder="e.g. animated-sunset" />
@@ -662,6 +691,7 @@
       <p style="font-size:0.8rem;color:var(--muted);margin-bottom:14px">
         Text → 3D human skeleton motion animation via Motion Diffusion Model.
       </p>
+      <div style="font-size:0.76rem;color:var(--muted);margin-bottom:14px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">⚡ Recommended VRAM: 4 GB+ (GPU) or CPU. MDM is lightweight — runs on most hardware.</div>
 
       <label>Title</label>
       <input type="text" id="stickman-title" placeholder="e.g. person-walking" />
@@ -775,8 +805,10 @@
       <label>Title</label>
       <input type="text" id="wan-title" placeholder="e.g. anime-city-rain" />
 
-      <label>Prompt</label>
-      <textarea id="wan-prompt" placeholder="A cyberpunk city at night, neon lights reflecting on wet streets, anime style, cinematic…"></textarea>
+      <label>Prompts <span style="font-size:0.72rem;color:var(--muted)" id="wan-prompt-hint">(one per clip)</span></label>
+      <div id="wan-prompts-container">
+        <textarea class="wan-clip-prompt" data-clip="1" placeholder="Clip 1 — A cyberpunk city at night, neon lights reflecting on wet streets, anime style, cinematic…"></textarea>
+      </div>
 
       <label>Resolution</label>
       <select id="wan-resolution">
@@ -862,7 +894,91 @@
   </div>
 </div>
 
-<!-- ── Shared history (always visible below tabs) ── -->
+<!-- ═══════════════════════════════════════════════════════════════
+     TAB 5: Story Video (Script → Scenes → Images + Hindi TTS → MP4)
+════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-story">
+  <div class="panel-inner">
+
+    <!-- Step 1: Script input -->
+    <div class="card amber">
+      <h2>📖 Story Video <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:6px">Script → Scenes → Hindi Voiceover → MP4</span></h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:16px">
+        Type a high-level script or story idea. The LLM will break it into scenes, generate a still image per scene, add Hindi voiceover, and stitch everything into a video.
+      </p>
+
+      <label>Title</label>
+      <input type="text" id="story-title" placeholder="e.g. jungle-adventure" />
+
+      <label>Script / Story Idea (English)</label>
+      <textarea id="story-script" style="min-height:120px" placeholder="A young girl discovers a hidden garden in her grandmother's village. She finds magical seeds that grow into giant glowing plants overnight. The next morning the whole village gathers in wonder…"></textarea>
+
+      <label>Number of scenes</label>
+      <div class="range-row">
+        <input type="range" id="story-scenes" min="2" max="8" value="4" step="1" />
+        <span class="range-val" id="story-scenes-disp">4</span>
+      </div>
+
+      <label>Image Style</label>
+      <select id="story-style">
+        <option value="realistic">Realistic</option>
+        <option value="ghibli">Ghibli</option>
+        <option value="anime">Anime</option>
+        <option value="cartoon">Cartoon</option>
+        <option value="futuristic">Futuristic</option>
+        <option value="scifi">Sci-Fi</option>
+      </select>
+      <div id="story-style-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">⚡ Recommended VRAM: 4–6 GB (SD 1.5). CPU supported but slow. ~30s/image on GPU, ~5min/image on CPU.</div>
+
+      <label style="margin-top:14px">LLM for scene breakdown</label>
+      <select id="story-llm">
+        <option value="qwen">Qwen2.5-7B-Instruct FP16 (best quality, ~5 GB VRAM / slow on CPU)</option>
+        <option value="qwen-gguf">Qwen2.5-7B-Instruct GGUF Q4 (fast on CPU, near-identical quality)</option>
+        <option value="phi3">Phi-3.5-Mini-Instruct (lightest, ~3 GB VRAM / fastest on CPU)</option>
+      </select>
+      <div id="story-llm-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">⚡ Recommended VRAM: 5 GB (Qwen2.5-7B) or 3 GB (Phi-3.5-Mini). Runs on CPU — slower but works.</div>
+
+      <label style="margin-top:14px">TTS Voice</label>
+      <select id="story-voice">
+        <option value="default_female">Default Female (Marathi reference → Hindi output)</option>
+        <option value="default_male">Default Male (Marathi reference → Hindi output)</option>
+      </select>
+      <div style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">⚡ Recommended VRAM: 4 GB (IndicF5). Runs on CPU. Hindi output via cross-lingual voice cloning.</div>
+
+      <div id="story-dl-banner" class="model-dl-banner hidden"></div>
+
+      <button class="gen-btn" style="background:#f59e0b;color:#000;margin-top:18px" id="btn-story-breakdown">🔍 Break into Scenes</button>
+    </div>
+
+    <!-- Step 2: Scene editor (shown after LLM breakdown) -->
+    <div class="card hidden" id="story-scenes-card">
+      <h2 style="color:#f59e0b">✏️ Review &amp; Edit Scenes</h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:14px">Edit the image prompt or narration for any scene before generating.</p>
+      <div id="story-scenes-list"></div>
+      <button class="gen-btn" style="background:#f59e0b;color:#000;margin-top:10px" id="btn-story-generate">🎬 Generate Story Video</button>
+    </div>
+
+    <!-- Progress card -->
+    <div class="card hidden" id="story-progress-card">
+      <h2 style="color:#f59e0b">⏳ Generating…</h2>
+      <div class="prog-wrap">
+        <div class="prog-bar-track"><div class="prog-bar" id="story-prog-bar" style="background:#f59e0b"></div></div>
+        <span class="prog-pct" id="story-prog-pct">0%</span>
+      </div>
+      <div class="prog-msg" id="story-prog-msg">Queued…</div>
+      <div class="prog-frames" id="story-prog-frames"></div>
+    </div>
+
+    <!-- Output card -->
+    <div class="card hidden" id="story-output-card">
+      <h2 style="color:#f59e0b">🎬 Output</h2>
+      <video id="story-output-video" controls loop></video>
+      <div class="video-meta" id="story-video-meta"></div>
+      <a id="story-dl-link" class="dl-btn" download>⬇ Download MP4</a>
+    </div>
+
+  </div>
+</div>
 <div class="history-wrap">
   <div class="card" id="history-card">
     <h2>🕑 Recent Jobs</h2>
@@ -874,6 +990,28 @@
 
 <script>
 const API = '';
+
+// Sync the number of per-clip prompt textareas to match the clips slider
+function syncClipPrompts(containerId, cssClass, count, placeholder) {
+  const container = document.getElementById(containerId);
+
+  // Collect existing values so we don't wipe user input
+  const existing = container.querySelectorAll('textarea');
+  const values = Array.from(existing).map(t => t.value);
+
+  // Re-render all rows
+  container.innerHTML = '';
+  for (let i = 1; i <= count; i++) {
+    const row = document.createElement('div');
+    row.className = count > 1 ? 'clip-prompt-row' : '';
+    const label = count > 1 ? `<label>Clip ${i}</label>` : '';
+    row.innerHTML = `${label}<textarea class="${cssClass}" data-clip="${i}" placeholder="${count > 1 ? `Clip ${i} — ` : ''}${placeholder}"></textarea>`;
+    container.appendChild(row);
+    // Restore saved value
+    const ta = row.querySelector('textarea');
+    if (values[i - 1] !== undefined) ta.value = values[i - 1];
+  }
+}
 
 // ── Model status cache ────────────────────────────────────────────────────────
 let _modelStatusCache = {};
@@ -1025,12 +1163,12 @@ bindRange('t2v-duration', 't2v-dur-disp', 's');
 bindRange('t2v-steps', 't2v-steps-disp');
 bindRange('t2v-guidance', 't2v-guidance-disp');
 
-const MODEL_NOTES = {
-  cogvideox:         'Best on GPU with 16+ GB VRAM. ~6s per clip. Use clip stitching for longer videos.',
-  cogvideox15:       'CogVideoX 1.5 — up to 81 frames (~10s/clip). GPU recommended.',
-  'cogvideox-i2v':   'Image + text → video. Upload a seed image. ~6s per clip. GPU recommended.',
-  'cogvideox15-i2v': 'CogVideoX 1.5 I2V — up to 81 frames (~10s/clip) with seed image. GPU recommended.',
-  modelscope:        'CPU-friendly (~3.5 GB). Has Shutterstock watermarks baked in. No clip stitching.',
+ const MODEL_NOTES = {
+  cogvideox:         '⚡ Recommended VRAM: 16 GB+. Best quality T2V. ~6s per clip.',
+  cogvideox15:       '⚡ Recommended VRAM: 24 GB+. Up to 81 frames (~10s/clip).',
+  'cogvideox-i2v':   '⚡ Recommended VRAM: 16 GB+. Image + text → video. Upload a seed image.',
+  'cogvideox15-i2v': '⚡ Recommended VRAM: 24 GB+. I2V up to 81 frames (~10s/clip).',
+  modelscope:        '⚡ Recommended VRAM: CPU-friendly (no GPU needed). Has Shutterstock watermarks. No clip stitching.',
 };
 const MODEL_LABELS = {
   cogvideox:         'CogVideoX-5B',
@@ -1070,6 +1208,9 @@ function updateClipsHint() {
   document.getElementById('t2v-clips-val').textContent      = clips;
   document.getElementById('t2v-clips-disp').textContent     = clips;
   document.getElementById('t2v-clips-dur-hint').textContent = clips > 1 ? `≈ ${secs}s total` : '';
+  syncClipPrompts('t2v-prompts-container', 't2v-clip-prompt', clips,
+    'A serene mountain lake at sunrise, mist rising over still water, golden light…');
+  document.getElementById('t2v-prompt-hint').textContent = clips > 1 ? '(one per clip)' : '';
 }
 
 document.getElementById('t2v-model').addEventListener('change', updateModelUI);
@@ -1130,12 +1271,14 @@ const T2V_MODEL_REGISTRY_KEY = {
 };
 
 async function doT2vGenerate() {
-  const prompt   = document.getElementById('t2v-prompt').value.trim();
+  const prompts  = Array.from(document.querySelectorAll('#t2v-prompts-container textarea'))
+                        .map(t => t.value.trim()).filter(Boolean);
+  const prompt   = prompts[0] || '';
   const title    = document.getElementById('t2v-title').value.trim();
   const model    = document.getElementById('t2v-model').value;
   const numClips = parseInt(document.getElementById('t2v-clips').value) || 1;
   const isI2V    = model.endsWith('-i2v');
-  if (!prompt) { alert('Please enter a prompt.'); return; }
+  if (!prompt) { alert('Please enter a prompt for Clip 1.'); return; }
 
   if (isI2V) {
     const seedFile = document.getElementById('t2v-seed-file').files[0];
@@ -1166,6 +1309,7 @@ async function doT2vGenerate() {
       // multipart/form-data for image upload
       const fd = new FormData();
       fd.append('prompt', prompt);
+      fd.append('prompts', JSON.stringify(prompts));
       fd.append('title', title);
       fd.append('model', model);
       fd.append('num_clips', numClips);
@@ -1180,7 +1324,7 @@ async function doT2vGenerate() {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
-          prompt, title, model, num_clips: numClips,
+          prompt, prompts, title, model, num_clips: numClips,
           duration_seconds: parseFloat(document.getElementById('t2v-duration').value),
           fps: 8,
           num_steps: parseInt(document.getElementById('t2v-steps').value),
@@ -1510,8 +1654,8 @@ bindRange('wan-steps',    'wan-steps-disp');
 bindRange('wan-guidance', 'wan-guidance-disp');
 
 const WAN_MODEL_NOTES = {
-  '1.3b': 'Best for RTX 3060 (6 GB). Uses CPU offloading. ~5s per clip at 480P. ~45 GB download.',
-  '14b':  'High quality. Requires 16+ GB VRAM. Uses sequential CPU offload on low-VRAM GPUs — very slow. ~80 GB download.',
+  '1.3b': '⚡ Recommended VRAM: 6 GB (RTX 3060 friendly). Uses CPU offloading. ~5s per clip at 480P. ~45 GB download.',
+  '14b':  '⚡ Recommended VRAM: 16 GB+. High quality. Sequential CPU offload on low-VRAM GPUs — very slow. ~80 GB download.',
 };
 
 // Cache GPU info after first fetch
@@ -1550,6 +1694,9 @@ function updateWanClipsHint() {
   document.getElementById('wan-clips-val').textContent  = clips;
   document.getElementById('wan-clips-disp').textContent = clips;
   document.getElementById('wan-clips-hint').textContent = clips > 1 ? `≈ ${clips * secsPerClip}s total` : '';
+  syncClipPrompts('wan-prompts-container', 'wan-clip-prompt', clips,
+    'A cyberpunk city at night, neon lights reflecting on wet streets, anime style, cinematic…');
+  document.getElementById('wan-prompt-hint').textContent = clips > 1 ? '(one per clip)' : '';
   updateWanEstimate();
 }
 
@@ -1582,7 +1729,9 @@ function setWanPill(status) {
 
 let wanPollTimer = null;
 document.getElementById('btn-wan').addEventListener('click', async () => {
-  const prompt   = document.getElementById('wan-prompt').value.trim();
+  const prompts  = Array.from(document.querySelectorAll('#wan-prompts-container textarea'))
+                        .map(t => t.value.trim()).filter(Boolean);
+  const prompt   = prompts[0] || '';
   const title    = document.getElementById('wan-title').value.trim();
   const variant  = document.getElementById('wan-model-variant').value;
   const res_val  = document.getElementById('wan-resolution').value;
@@ -1590,7 +1739,7 @@ document.getElementById('btn-wan').addEventListener('click', async () => {
   const steps    = parseInt(document.getElementById('wan-steps').value) || 30;
   const guidance = parseFloat(document.getElementById('wan-guidance').value) || 5.0;
 
-  if (!prompt) { alert('Please enter a prompt.'); return; }
+  if (!prompt) { alert('Please enter a prompt for Clip 1.'); return; }
 
   // Check model is downloaded
   const wanRegistryKey = variant === '14b' ? 'wan-14b' : 'wan-1.3b';
@@ -1614,7 +1763,7 @@ document.getElementById('btn-wan').addEventListener('click', async () => {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        prompt, title,
+        prompt, prompts, title,
         model_variant: variant,
         resolution: res_val,
         num_clips: clips,
@@ -1681,6 +1830,156 @@ async function pollWan(jobId) {
   const wanVariant = document.getElementById('wan-model-variant').value;
   checkModel('wan-dl-banner', wanVariant === '14b' ? 'wan-14b' : 'wan-1.3b', 'btn-wan', () => {});
 })();
+
+// ── TAB 5 — Story Video ───────────────────────────────────────────────────────
+
+const STORY_LLM_NOTES = {
+  qwen:       '⚡ Recommended VRAM: 5 GB. FP16 weights — best quality. Slow on CPU (~2–3 min).',
+  'qwen-gguf':'⚡ Recommended VRAM: none (CPU optimized). Q4 quantized — 4–6x faster on CPU, near-identical quality. Requires llama-cpp-python.',
+  phi3:       '⚡ Recommended VRAM: 3 GB. Lightest option — fastest on CPU. Slightly less reliable on complex scene formatting.',
+};
+
+document.getElementById('story-llm').addEventListener('change', () => {
+  const v = document.getElementById('story-llm').value;
+  document.getElementById('story-llm-note').textContent = STORY_LLM_NOTES[v] || '';
+});
+
+document.getElementById('story-scenes').addEventListener('input', () => {
+  document.getElementById('story-scenes-disp').textContent = document.getElementById('story-scenes').value;
+});
+
+// Break into scenes via LLM
+document.getElementById('btn-story-breakdown').addEventListener('click', async () => {
+  const script  = document.getElementById('story-script').value.trim();
+  const nScenes = parseInt(document.getElementById('story-scenes').value) || 4;
+  const llm     = document.getElementById('story-llm').value;
+  if (!script) { alert('Please enter a script or story idea.'); return; }
+
+  const btn = document.getElementById('btn-story-breakdown');
+  btn.disabled = true; btn.textContent = 'Breaking into scenes…';
+
+  try {
+    const res  = await fetch(`${API}/api/story_breakdown`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ script, num_scenes: nScenes, llm }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+    renderScenes(data.scenes);
+    document.getElementById('story-scenes-card').classList.remove('hidden');
+    document.getElementById('story-scenes-card').scrollIntoView({ behavior: 'smooth' });
+  } catch (e) {
+    alert(`Scene breakdown failed: ${e.message}`);
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 Break into Scenes';
+  }
+});
+
+function renderScenes(scenes) {
+  const list = document.getElementById('story-scenes-list');
+  list.innerHTML = '';
+  scenes.forEach((scene, i) => {
+    const card = document.createElement('div');
+    card.className = 'story-scene-card';
+    card.dataset.idx = i;
+    card.innerHTML = `
+      <div class="scene-header">
+        <span class="scene-num">Scene ${i + 1}</span>
+      </div>
+      <div class="narration-label">Narration (Hindi TTS will read this)</div>
+      <textarea class="scene-narration" placeholder="Narration text…">${scene.narration || ''}</textarea>
+      <div class="narration-label">Image prompt (edit to refine)</div>
+      <textarea class="scene-img-prompt" placeholder="Image generation prompt…">${scene.image_prompt || ''}</textarea>
+      <img class="scene-img-preview" id="scene-preview-${i}" src="" alt="Scene ${i+1} preview" />
+    `;
+    list.appendChild(card);
+  });
+}
+
+function collectScenes() {
+  return Array.from(document.querySelectorAll('#story-scenes-list .story-scene-card')).map((card, i) => ({
+    narration:    card.querySelector('.scene-narration').value.trim(),
+    image_prompt: card.querySelector('.scene-img-prompt').value.trim(),
+  }));
+}
+
+let storyPollTimer = null;
+document.getElementById('btn-story-generate').addEventListener('click', async () => {
+  const title  = document.getElementById('story-title').value.trim();
+  const style  = document.getElementById('story-style').value;
+  const voice  = document.getElementById('story-voice').value;
+  const scenes = collectScenes();
+
+  if (!scenes.length) { alert('No scenes found. Run breakdown first.'); return; }
+  if (scenes.some(s => !s.narration && !s.image_prompt)) {
+    if (!confirm('Some scenes have empty fields. Continue anyway?')) return;
+  }
+
+  const btn = document.getElementById('btn-story-generate');
+  btn.disabled = true; btn.textContent = 'Starting…';
+  if (storyPollTimer) clearInterval(storyPollTimer);
+
+  document.getElementById('story-output-card').classList.add('hidden');
+  document.getElementById('story-prog-bar').style.width = '0%';
+  document.getElementById('story-prog-pct').textContent = '0%';
+  document.getElementById('story-prog-msg').textContent = 'Queued…';
+  document.getElementById('story-progress-card').classList.remove('hidden');
+
+  try {
+    const res = await fetch(`${API}/api/generate_story`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ title, style, voice, scenes }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+    const jobId = data.job_id;
+    btn.textContent = 'Generating…';
+
+    storyPollTimer = setInterval(async () => {
+      try {
+        const pr = await fetch(`${API}/api/job_status/${jobId}`);
+        const job = await pr.json();
+
+        document.getElementById('story-prog-bar').style.width = (job.progress || 0) + '%';
+        document.getElementById('story-prog-pct').textContent = (job.progress || 0) + '%';
+        document.getElementById('story-prog-msg').textContent = job.message || '';
+
+        // Show per-scene image previews as they're ready
+        if (job.scene_images) {
+          job.scene_images.forEach((url, i) => {
+            const img = document.getElementById(`scene-preview-${i}`);
+            if (img && url) { img.src = url; img.style.display = 'block'; }
+          });
+        }
+
+        if (job.status === 'done') {
+          clearInterval(storyPollTimer);
+          const videoUrl = `${API}/outputs/story/${job.video_file}`;
+          document.getElementById('story-output-video').src = videoUrl;
+          document.getElementById('story-dl-link').href = videoUrl;
+          document.getElementById('story-dl-link').download = job.video_file;
+          document.getElementById('story-video-meta').textContent =
+            `${job.elapsed_seconds}s generation · ${job.scene_count} scenes · ${style} style`;
+          document.getElementById('story-output-card').classList.remove('hidden');
+          document.getElementById('story-progress-card').classList.add('hidden');
+          btn.disabled = false; btn.textContent = '🎬 Generate Story Video';
+        } else if (job.status === 'failed') {
+          clearInterval(storyPollTimer);
+          alert(`Generation failed: ${job.error}`);
+          document.getElementById('story-progress-card').classList.add('hidden');
+          btn.disabled = false; btn.textContent = '🎬 Generate Story Video';
+        }
+      } catch (_) {}
+    }, 2000);
+  } catch (e) {
+    alert(`Failed to start: ${e.message}`);
+    btn.disabled = false; btn.textContent = '🎬 Generate Story Video';
+  }
+});
 </script>
 </body>
 </html>
