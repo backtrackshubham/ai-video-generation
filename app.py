@@ -2031,16 +2031,21 @@ def generate_hindi_tts(text: str, voice_key: str, out_path: Path) -> Path:
 
 # ── FFmpeg stitch ─────────────────────────────────────────────────────────────
 
-def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path) -> Path:
-    """Hold each still image for its audio duration, then concat all scenes."""
+def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
+                       transition: str = "fade", transition_duration: float = 0.8) -> Path:
+    """
+    Hold each still image for its audio duration, then stitch all scenes
+    with optional xfade transitions between them.
+    """
     import subprocess
     import tempfile
 
     tmp_dir = Path(tempfile.mkdtemp())
     scene_videos = []
+    durations = []
 
+    # ── Step 1: render one video clip per scene (image + audio) ──
     for i, (img_path, audio_path) in enumerate(zip(scene_images, scene_audios)):
-        # Probe audio duration
         probe = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(audio_path)],
             capture_output=True, text=True,
@@ -2054,6 +2059,7 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path) -
                     break
         except Exception:
             pass
+        durations.append(duration)
 
         scene_mp4 = tmp_dir / f"scene_{i:03d}.mp4"
         subprocess.run([
@@ -2064,30 +2070,81 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path) -
             "-c:a", "aac", "-b:a", "128k",
             "-pix_fmt", "yuv420p",
             "-vf", "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2",
+            "-r", "25",
             "-shortest",
             str(scene_mp4),
         ], check=True)
         scene_videos.append(scene_mp4)
 
-    concat_list = tmp_dir / "concat.txt"
-    with open(concat_list, "w") as f:
-        for sv in scene_videos:
-            f.write(f"file '{sv}'\n")
+    # ── Step 2: stitch with xfade or plain concat ─────────────────
+    if transition == "none" or len(scene_videos) == 1:
+        # Simple concat — no re-encode needed
+        concat_list = tmp_dir / "concat.txt"
+        with open(concat_list, "w") as f:
+            for sv in scene_videos:
+                f.write(f"file '{sv}'\n")
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", str(concat_list),
+            "-c", "copy",
+            str(out_path),
+        ], check=True)
+    else:
+        # xfade filter chain — requires re-encoding
+        # Build complex filtergraph:
+        #   [0:v][1:v]xfade=transition=fade:duration=0.8:offset=<d0-dur>[v01];
+        #   [v01][2:v]xfade=...offset=<d0+d1-dur>[v012]; ...
+        # Audio: acrossfade each pair
+        n = len(scene_videos)
+        td = transition_duration
 
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", str(concat_list),
-        "-c", "copy",
-        str(out_path),
-    ], check=True)
+        # Input args
+        inputs = []
+        for sv in scene_videos:
+            inputs += ["-i", str(sv)]
+
+        # Build video filter chain
+        vfilter_parts = []
+        afilter_parts = []
+        offset = 0.0
+        prev_v = "0:v"
+        prev_a = "0:a"
+
+        for i in range(1, n):
+            offset += durations[i - 1] - td
+            out_v = f"v{i}" if i < n - 1 else "vout"
+            out_a = f"a{i}" if i < n - 1 else "aout"
+
+            vfilter_parts.append(
+                f"[{prev_v}][{i}:v]xfade=transition={transition}:"
+                f"duration={td}:offset={offset:.3f}[{out_v}]"
+            )
+            afilter_parts.append(
+                f"[{prev_a}][{i}:a]acrossfade=d={td}[{out_a}]"
+            )
+            prev_v = out_v
+            prev_a = out_a
+
+        filter_complex = ";".join(vfilter_parts + afilter_parts)
+
+        subprocess.run([
+            "ffmpeg", "-y",
+            *inputs,
+            "-filter_complex", filter_complex,
+            "-map", "[vout]", "-map", "[aout]",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k",
+            str(out_path),
+        ], check=True)
 
     return out_path
 
 
 # ── Story generation worker ───────────────────────────────────────────────────
 
-def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug: str):
+def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug: str,
+                         transition: str = "fade", transition_duration: float = 0.8):
     jlog = make_job_logger(slug, LOG_STORY_DIR)
     jlog.info(f"[{job_id}] Story gen | scenes={len(scenes)} style={style} voice={voice}")
 
@@ -2132,7 +2189,8 @@ def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug
         jobs[job_id].update(status="stitching", progress=85, message="Stitching scenes into video…")
         video_filename = f"{slug}.mp4"
         out_path = OUTPUT_STORY_DIR / video_filename
-        stitch_story_video(scene_image_paths, scene_audio_paths, out_path)
+        stitch_story_video(scene_image_paths, scene_audio_paths, out_path,
+                           transition=transition, transition_duration=transition_duration)
 
         elapsed = int(time.time() - start_time)
         jobs[job_id].update(
@@ -2173,11 +2231,17 @@ def api_story_breakdown():
 
 @app.route("/api/generate_story", methods=["POST"])
 def api_generate_story():
-    data   = request.get_json(force=True)
-    scenes = data.get("scenes", [])
-    style  = data.get("style", "realistic").lower().strip()
-    voice  = data.get("voice", "default_female").strip()
-    title  = data.get("title", "").strip()
+    data                = request.get_json(force=True)
+    scenes              = data.get("scenes", [])
+    style               = data.get("style", "realistic").lower().strip()
+    voice               = data.get("voice", "mms_hindi").strip()
+    title               = data.get("title", "").strip()
+    transition          = data.get("transition", "fade").lower().strip()
+    transition_duration = max(0.3, min(2.0, float(data.get("transition_duration", 0.8))))
+
+    valid_transitions = {"fade","fadeblack","fadewhite","dissolve","wipeleft","wiperight",
+                         "wipeup","wipedown","slideleft","slideright","circleopen",
+                         "circleclose","pixelize","none"}
 
     if not scenes:
         return jsonify({"error": "scenes are required"}), 400
@@ -2185,6 +2249,8 @@ def api_generate_story():
         style = "realistic"
     if voice not in INDIC_VOICE_REFS and voice != "mms_hindi":
         voice = "mms_hindi"
+    if transition not in valid_transitions:
+        transition = "fade"
 
     job_id = str(uuid.uuid4())
     slug   = slugify(title) if title else f"story-{job_id[:8]}"
@@ -2208,10 +2274,11 @@ def api_generate_story():
     threading.Thread(
         target=run_story_generation,
         args=(job_id, scenes, style, voice, slug),
+        kwargs={"transition": transition, "transition_duration": transition_duration},
         daemon=True,
     ).start()
 
-    log.info(f"[{job_id}] Story job: {len(scenes)} scenes, style={style}, voice={voice}")
+    log.info(f"[{job_id}] Story job: {len(scenes)} scenes, style={style}, voice={voice}, transition={transition}")
     return jsonify({"job_id": job_id}), 202
 
 
