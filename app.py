@@ -1899,8 +1899,13 @@ def _get_sd_pipe(style: str):
     )
 
     if lora_repo and lora_file:
-        log.info(f"Loading LoRA {lora_repo}/{lora_file}…")
-        pipe.load_lora_weights(lora_repo, weight_name=lora_file)
+        lora_local = MODEL_DIR / "loras" / lora_file
+        if lora_local.exists():
+            log.info(f"Loading LoRA from local path {lora_local}…")
+            pipe.load_lora_weights(str(lora_local.parent), weight_name=lora_file)
+        else:
+            log.info(f"Loading LoRA from HuggingFace {lora_repo}/{lora_file}…")
+            pipe.load_lora_weights(lora_repo, weight_name=lora_file)
 
     if DEVICE == "cuda":
         pipe = pipe.to("cuda")

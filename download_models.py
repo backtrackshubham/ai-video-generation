@@ -28,12 +28,14 @@ from pathlib import Path
 
 BASE_DIR  = Path(__file__).resolve().parent
 HF_CACHE  = BASE_DIR / "models" / "hf_cache"
+LORA_DIR  = BASE_DIR / "models" / "loras"   # flat directory for LoRA files (avoids long paths)
 
 os.environ["HF_HOME"]            = str(HF_CACHE)
 os.environ["TRANSFORMERS_CACHE"] = str(HF_CACHE)
 os.environ["DIFFUSERS_CACHE"]    = str(HF_CACHE)
 
 HF_CACHE.mkdir(parents=True, exist_ok=True)
+LORA_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 import platform
@@ -117,21 +119,27 @@ MODELS = {
         "size_gb": 0.4,
         "label":   "MMS-TTS Hindi (Hindi TTS — no login needed)",
     },
-    # Style LoRAs for SD 1.5 (small ~72 MB each)
+    # Style LoRAs for SD 1.5 — downloaded flat to models/loras/ to avoid Windows long path issues
     "lora-ghibli": {
-        "hf_repo": "artificialguybr/studioghibli-redmond-1-5v-studio-ghibli-lora-for-liberteredmond-sd-1-5",
-        "size_gb": 0.1,
-        "label":   "LoRA: Ghibli style",
+        "hf_repo":  "artificialguybr/studioghibli-redmond-1-5v-studio-ghibli-lora-for-liberteredmond-sd-1-5",
+        "filename": "StudioGhibliRedmond-15V-LiberteRedmond-StdGBRedmAF-StudioGhibli.safetensors",
+        "size_gb":  0.1,
+        "label":    "LoRA: Ghibli style",
+        "lora":     True,
     },
     "lora-cartoon": {
-        "hf_repo": "artificialguybr/cutecartoon-redmond-1-5v-cute-cartoon-lora-for-liberteredmond-sd-1-5",
-        "size_gb": 0.1,
-        "label":   "LoRA: Anime/Cartoon style",
+        "hf_repo":  "artificialguybr/cutecartoon-redmond-1-5v-cute-cartoon-lora-for-liberteredmond-sd-1-5",
+        "filename": "CuteCartoon15V-LiberteRedmodModel-Cartoon-CuteCartoonAF.safetensors",
+        "size_gb":  0.1,
+        "label":    "LoRA: Anime/Cartoon style",
+        "lora":     True,
     },
     "lora-3d": {
-        "hf_repo": "artificialguybr/3d-redmond-1-5v-3d-render-style-for-liberte-redmond-sd-1-5",
-        "size_gb": 0.1,
-        "label":   "LoRA: Futuristic/Sci-Fi (3D render) style",
+        "hf_repo":  "artificialguybr/3d-redmond-1-5v-3d-render-style-for-liberte-redmond-sd-1-5",
+        "filename": "3DRedmond-3DRenderStyle-3DRenderAF.safetensors",
+        "size_gb":  0.1,
+        "label":    "LoRA: Futuristic/Sci-Fi (3D render) style",
+        "lora":     True,
     },
 }
 
@@ -140,7 +148,12 @@ def _cache_name(hf_repo: str) -> str:
     return "models--" + hf_repo.replace("/", "--")
 
 
-def is_downloaded(hf_repo: str) -> bool:
+def is_downloaded(key: str) -> bool:
+    info = MODELS[key]
+    if info.get("lora"):
+        # LoRAs stored flat in models/loras/<filename>
+        return (LORA_DIR / info["filename"]).exists()
+    hf_repo = info["hf_repo"]
     snap_dir = HF_CACHE / _cache_name(hf_repo) / "snapshots"
     if not snap_dir.exists():
         return False
@@ -155,21 +168,41 @@ def print_status():
     print(f"  {'Key':<20} {'Label':<30} {'Size':>8}  {'Status'}")
     print(f"  {'-'*20} {'-'*30} {'-'*8}  {'-'*12}")
     for key, info in MODELS.items():
-        status = green("downloaded") if is_downloaded(info["hf_repo"]) else yellow("not downloaded")
+        status = green("downloaded") if is_downloaded(key) else yellow("not downloaded")
         print(f"  {key:<20} {info['label']:<30} {info['size_gb']:>6} GB  {status}")
     print()
 
 
 def download_model(key: str):
-    from huggingface_hub import snapshot_download
     info = MODELS[key]
-    if is_downloaded(info["hf_repo"]):
+    if is_downloaded(key):
         print(green(f"  ✓ {info['label']} already downloaded"))
         return
 
     print(cyan(f"\n  Downloading {info['label']} (~{info['size_gb']} GB)…"))
     try:
-        snapshot_download(info["hf_repo"], cache_dir=str(HF_CACHE))
+        if info.get("lora"):
+            # ── LoRA: download single file flat to models/loras/ ──
+            # Avoids deep HF cache paths that exceed Windows 260-char limit
+            from huggingface_hub import hf_hub_download
+            dest = LORA_DIR / info["filename"]
+            hf_hub_download(
+                repo_id=info["hf_repo"],
+                filename=info["filename"],
+                local_dir=str(LORA_DIR),
+            )
+            # hf_hub_download may nest under local_dir; flatten if needed
+            nested = LORA_DIR / info["filename"]
+            if not nested.exists():
+                # search one level deep
+                for f in LORA_DIR.rglob(info["filename"]):
+                    import shutil
+                    shutil.copy2(str(f), str(LORA_DIR / info["filename"]))
+                    break
+        else:
+            from huggingface_hub import snapshot_download
+            snapshot_download(info["hf_repo"], cache_dir=str(HF_CACHE))
+
         print(green(f"  ✓ {info['label']} downloaded successfully"))
     except Exception as e:
         print(red(f"  ✗ Failed to download {info['label']}: {e}"))
@@ -183,7 +216,7 @@ def interactive_menu():
     print(cyan("=" * 56))
     print_status()
 
-    keys_available = [k for k, v in MODELS.items() if not is_downloaded(v["hf_repo"])]
+    keys_available = [k for k in MODELS if not is_downloaded(k)]
     if not keys_available:
         print(green("  All models already downloaded!"))
         return
