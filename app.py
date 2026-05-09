@@ -2324,6 +2324,7 @@ def serve_story_output(filename):
 
 if __name__ == "__main__":
     import argparse
+    parser = argparse.ArgumentParser(description="AI Video Generation Server")
     parser.add_argument("--port", type=int, default=7860)
     cli_args = parser.parse_args()
     log.info(f"Starting AI Video Generation server on http://0.0.0.0:{cli_args.port}")
