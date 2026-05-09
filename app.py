@@ -51,10 +51,32 @@ for d in (OUTPUT_VIDEO_DIR, OUTPUT_STICKMAN_DIR, OUTPUT_I2V_DIR, OUTPUT_WAN_DIR,
     os.makedirs(d, exist_ok=True)
 
 # ── Model caches inside repo ──────────────────────────────────────────────────
-os.environ.setdefault("HF_HOME",           str(MODEL_DIR / "hf_cache"))
-os.environ.setdefault("TRANSFORMERS_CACHE", str(MODEL_DIR / "hf_cache"))
-os.environ.setdefault("DIFFUSERS_CACHE",    str(MODEL_DIR / "hf_cache"))
+HF_CACHE = MODEL_DIR / "hf_cache"
+LORA_DIR = MODEL_DIR / "loras"
+os.environ.setdefault("HF_HOME",           str(HF_CACHE))
+os.environ.setdefault("TRANSFORMERS_CACHE", str(HF_CACHE))
+os.environ.setdefault("DIFFUSERS_CACHE",    str(HF_CACHE))
 os.environ.setdefault("TORCH_HOME",         str(MODEL_DIR / "torch_cache"))
+
+
+def _hf_cache_name(hf_repo: str) -> str:
+    return "models--" + hf_repo.replace("/", "--")
+
+
+def _pretrained_source(hf_repo: str):
+    """Return (path_or_id, extra_kwargs) for from_pretrained.
+
+    If the model was downloaded with download_models.py (local_dir layout),
+    return the local path directly — no symlinks, no HF network call.
+    Otherwise fall back to repo-id + cache_dir so HF downloads on demand.
+    """
+    local = HF_CACHE / _hf_cache_name(hf_repo)
+    if local.exists() and any(
+        f for f in local.rglob("*")
+        if f.is_file() and ".cache" not in str(f)
+    ):
+        return str(local), {}
+    return hf_repo, {"cache_dir": str(HF_CACHE)}
 
 # ── Device ────────────────────────────────────────────────────────────────────
 import torch
@@ -162,8 +184,9 @@ def _load_cogvx_t2v(model_id: str, label: str):
     from diffusers import CogVideoXPipeline
     dtype = torch.float16 if DEVICE == "cuda" else torch.float32
     log.info(f"Loading {label} ({DEVICE.upper()})…")
+    _src, _kw = _pretrained_source(model_id)
     pipe = CogVideoXPipeline.from_pretrained(
-        model_id, cache_dir=str(MODEL_DIR / "hf_cache"), torch_dtype=dtype,
+        _src, torch_dtype=dtype, **_kw,
     )
     pipe = pipe.to(DEVICE)
     if DEVICE == "cuda":
@@ -177,8 +200,9 @@ def _load_cogvx_i2v(model_id: str, label: str):
     from diffusers import CogVideoXImageToVideoPipeline
     dtype = torch.float16 if DEVICE == "cuda" else torch.float32
     log.info(f"Loading {label} ({DEVICE.upper()})…")
+    _src, _kw = _pretrained_source(model_id)
     pipe = CogVideoXImageToVideoPipeline.from_pretrained(
-        model_id, cache_dir=str(MODEL_DIR / "hf_cache"), torch_dtype=dtype,
+        _src, torch_dtype=dtype, **_kw,
     )
     pipe = pipe.to(DEVICE)
     if DEVICE == "cuda":
@@ -447,11 +471,12 @@ def get_modelscope_pipeline():
             from diffusers.utils import export_to_video
 
             dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+            _src, _kw = _pretrained_source(MODELSCOPE_MODEL_ID)
             pipe = DiffusionPipeline.from_pretrained(
-                MODELSCOPE_MODEL_ID,
-                cache_dir=str(MODEL_DIR / "hf_cache"),
+                _src,
                 torch_dtype=dtype,
                 trust_remote_code=True,
+                **_kw,
             )
             pipe = pipe.to(DEVICE)
             _modelscope_pipeline = pipe
@@ -554,10 +579,11 @@ def get_svd_pipeline():
             from diffusers import StableVideoDiffusionPipeline
 
             dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+            _src, _kw = _pretrained_source(SVD_MODEL_ID)
             pipe = StableVideoDiffusionPipeline.from_pretrained(
-                SVD_MODEL_ID,
-                cache_dir=str(MODEL_DIR / "hf_cache"),
+                _src,
                 torch_dtype=dtype,
+                **_kw,
             )
             pipe = pipe.to(DEVICE)
             if DEVICE == "cuda":
@@ -961,10 +987,11 @@ def get_wan_pipeline(model_id: str = WAN_MODEL_ID_13B):
 
             dtype = torch.bfloat16 if DEVICE == "cuda" else torch.float32
 
+            _src, _kw = _pretrained_source(model_id)
             pipe = WanPipeline.from_pretrained(
-                model_id,
-                cache_dir=str(MODEL_DIR / "hf_cache"),
+                _src,
                 torch_dtype=dtype,
+                **_kw,
             )
             if DEVICE == "cuda":
                 if model_id == WAN_MODEL_ID_14B:
@@ -1525,23 +1552,18 @@ MODEL_REGISTRY = {
     },
 }
 
-HF_CACHE = MODEL_DIR / "hf_cache"
-
-def _hf_repo_to_cache_name(hf_repo: str) -> str:
-    """Convert 'org/name' → 'models--org--name' (HuggingFace cache convention)."""
-    return "models--" + hf_repo.replace("/", "--")
-
 
 def _is_model_downloaded(hf_repo: str) -> bool:
-    """Return True if the model has at least one complete snapshot in HF cache."""
-    cache_name = _hf_repo_to_cache_name(hf_repo)
-    snap_dir = HF_CACHE / cache_name / "snapshots"
-    if not snap_dir.exists():
-        return False
-    # Any non-empty snapshot dir = downloaded
-    for snap in snap_dir.iterdir():
-        if snap.is_dir() and any(snap.iterdir()):
-            return True
+    """Return True if the model is available locally (flat local_dir or HF cache snapshot)."""
+    local = HF_CACHE / _hf_cache_name(hf_repo)
+    if local.exists() and any(f for f in local.rglob("*") if f.is_file() and ".cache" not in str(f)):
+        return True
+    # Fallback: old-style HF cache with snapshots/ (symlink-based, Linux)
+    snap_dir = local / "snapshots"
+    if snap_dir.exists():
+        for snap in snap_dir.iterdir():
+            if snap.is_dir() and any(snap.iterdir()):
+                return True
     return False
 
 
@@ -1620,7 +1642,7 @@ def api_download_model(model_key):
                 # HF stores files under models--org--name/blobs/ during download.
                 # The directory may not exist yet when the watcher starts, so we
                 # must handle that gracefully and keep retrying.
-                model_cache_dir = HF_CACHE / _hf_repo_to_cache_name(hf_repo)
+                model_cache_dir = HF_CACHE / _hf_cache_name(hf_repo)
                 while not stop_event.is_set():
                     try:
                         if model_cache_dir.exists():
@@ -1643,7 +1665,9 @@ def api_download_model(model_key):
             watcher = threading.Thread(target=_progress_watcher, daemon=True)
             watcher.start()
 
-            snapshot_download(hf_repo, cache_dir=str(HF_CACHE))
+            local_dir = HF_CACHE / _hf_cache_name(hf_repo)
+            local_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_download(hf_repo, local_dir=str(local_dir))
 
             stop_event.set()
             job["progress"] = 100
@@ -1794,13 +1818,15 @@ def _get_llm_pipe(llm_key: str):
 
     model_id = STORY_LLM_MODELS.get(llm_key, STORY_LLM_MODELS["qwen"])
     log.info(f"Loading LLM {model_id} on {DEVICE}…")
+    _src, _kw = _pretrained_source(model_id)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(_src, **_kw)
     model = AutoModelForCausalLM.from_pretrained(
-        model_id,
+        _src,
         torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
         device_map="auto" if DEVICE == "cuda" else None,
         low_cpu_mem_usage=True,
+        **_kw,
     )
     if DEVICE == "cpu":
         model = model.to("cpu")
@@ -1891,11 +1917,13 @@ def _get_sd_pipe(style: str):
     log.info(f"Loading SD 1.5 for style={style} on {DEVICE}…")
     dtype = torch.float16 if DEVICE == "cuda" else torch.float32
 
+    _src, _kw = _pretrained_source(SD15_MODEL_ID)
     pipe = StableDiffusionPipeline.from_pretrained(
-        SD15_MODEL_ID,
+        _src,
         torch_dtype=dtype,
         safety_checker=None,
         requires_safety_checker=False,
+        **_kw,
     )
 
     if lora_repo and lora_file:
@@ -1951,10 +1979,12 @@ def _get_mms_pipe():
     log.info(f"Loading MMS-TTS Hindi on {DEVICE}…")
     from transformers import pipeline as hf_pipeline
 
+    _src, _kw = _pretrained_source(MMS_HINDI_MODEL_ID)
     tts = hf_pipeline(
         "text-to-speech",
-        model=MMS_HINDI_MODEL_ID,
+        model=_src,
         device=0 if DEVICE == "cuda" else -1,
+        **_kw,
     )
     _mms_tts_cache["pipe"] = tts
     log.info("MMS-TTS Hindi ready.")

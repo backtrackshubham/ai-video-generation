@@ -148,19 +148,26 @@ def _cache_name(hf_repo: str) -> str:
     return "models--" + hf_repo.replace("/", "--")
 
 
+def _local_model_dir(hf_repo: str) -> Path:
+    """Flat download dir for a model: models/hf_cache/<cache-name>/"""
+    return HF_CACHE / _cache_name(hf_repo)
+
+
 def is_downloaded(key: str) -> bool:
     info = MODELS[key]
     if info.get("lora"):
         # LoRAs stored flat in models/loras/<filename>
         return (LORA_DIR / info["filename"]).exists()
-    hf_repo = info["hf_repo"]
-    snap_dir = HF_CACHE / _cache_name(hf_repo) / "snapshots"
-    if not snap_dir.exists():
+    # Non-LoRA models: downloaded with local_dir into models/hf_cache/<cache-name>/
+    # Consider downloaded if directory is non-empty
+    local_dir = _local_model_dir(info["hf_repo"])
+    if not local_dir.exists():
         return False
-    for s in snap_dir.iterdir():
-        if s.is_dir() and any(s.iterdir()):
-            return True
-    return False
+    # Check for any real file (not just .cache metadata)
+    return any(
+        f for f in local_dir.rglob("*")
+        if f.is_file() and ".cache" not in f.parts
+    )
 
 
 def print_status():
@@ -182,26 +189,35 @@ def download_model(key: str):
     print(cyan(f"\n  Downloading {info['label']} (~{info['size_gb']} GB)…"))
     try:
         if info.get("lora"):
-            # ── LoRA: download single file flat to models/loras/ ──
-            # Avoids deep HF cache paths that exceed Windows 260-char limit
+            # ── LoRA: single file, flat into models/loras/ ──
             from huggingface_hub import hf_hub_download
-            dest = LORA_DIR / info["filename"]
             hf_hub_download(
                 repo_id=info["hf_repo"],
                 filename=info["filename"],
                 local_dir=str(LORA_DIR),
             )
-            # hf_hub_download may nest under local_dir; flatten if needed
-            nested = LORA_DIR / info["filename"]
-            if not nested.exists():
-                # search one level deep
+            # Ensure the file ended up at the expected flat location
+            dest = LORA_DIR / info["filename"]
+            if not dest.exists():
                 for f in LORA_DIR.rglob(info["filename"]):
                     import shutil
-                    shutil.copy2(str(f), str(LORA_DIR / info["filename"]))
+                    shutil.copy2(str(f), str(dest))
                     break
         else:
+            # ── Regular model: use local_dir (no symlinks, no deep cache) ──
+            # This avoids WinError 1314 (symlink privilege) and long-path issues.
             from huggingface_hub import snapshot_download
-            snapshot_download(info["hf_repo"], cache_dir=str(HF_CACHE))
+            local_dir = _local_model_dir(info["hf_repo"])
+            local_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_download(
+                info["hf_repo"],
+                local_dir=str(local_dir),
+            )
+
+        print(green(f"  ✓ {info['label']} downloaded successfully"))
+    except Exception as e:
+        print(red(f"  ✗ Failed to download {info['label']}: {e}"))
+        raise
 
         print(green(f"  ✓ {info['label']} downloaded successfully"))
     except Exception as e:
