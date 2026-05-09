@@ -5,10 +5,12 @@ AI Video Generation — Standalone Model Downloader
 Downloads HuggingFace models into the correct cache directory.
 
 Usage:
-    python download_models.py                  # interactive menu
-    python download_models.py all              # download all models
-    python download_models.py cogvideox svd    # download specific models
-    python download_models.py --list           # list status only
+    python download_models.py                        # interactive menu
+    python download_models.py all                    # download all models
+    python download_models.py cogvideox svd          # download specific models
+    python download_models.py --list                 # list status only
+    python download_models.py --validate             # validate all downloaded models
+    python download_models.py --validate cogvideox   # validate specific model(s)
 
 Available model keys:
     cogvideox           CogVideoX-5B              (~22 GB)
@@ -219,10 +221,169 @@ def download_model(key: str):
         print(red(f"  ✗ Failed to download {info['label']}: {e}"))
         raise
 
-        print(green(f"  ✓ {info['label']} downloaded successfully"))
+
+# ── Validation ────────────────────────────────────────────────────────────────
+
+def validate_model(key: str) -> bool:
+    """Check a downloaded model for completeness by comparing local files
+    against the HuggingFace Hub file listing (name + size).
+
+    Falls back to a local-only size heuristic when Hub is unreachable.
+    Returns True if valid, False if missing or corrupt files found.
+    """
+    info = MODELS[key]
+    label = info["label"]
+
+    if not is_downloaded(key):
+        print(yellow(f"  ⚠  {label}: not downloaded — skipping validation"))
+        return False
+
+    print(cyan(f"\n  Validating {label}…"))
+
+    hf_repo = info["hf_repo"]
+
+    # ── LoRA: single-file check ───────────────────────────────────────────────
+    if info.get("lora"):
+        local_file = LORA_DIR / info["filename"]
+        if not local_file.exists():
+            print(red(f"  ✗ Missing: {info['filename']}"))
+            return False
+        local_size = local_file.stat().st_size
+        try:
+            from huggingface_hub import get_hf_file_metadata, hf_hub_url
+            url = hf_hub_url(repo_id=hf_repo, filename=info["filename"])
+            meta = get_hf_file_metadata(url)
+            expected = meta.size
+            if expected and local_size != expected:
+                print(red(
+                    f"  ✗ Size mismatch: {info['filename']} "
+                    f"(local {local_size:,} B vs expected {expected:,} B)"
+                ))
+                return False
+            print(green(f"  ✓ {info['filename']} — OK ({local_size / 1024**2:.1f} MB)"))
+        except Exception as e:
+            print(yellow(f"  ⚠  Hub unreachable ({e}); presence-only check passed"))
+        return True
+
+    # ── Regular model: try Hub comparison, fall back to size heuristic ────────
+    local_dir = _local_model_dir(hf_repo)
+
+    local_files: dict[str, int] = {}
+    for f in local_dir.rglob("*"):
+        if f.is_file() and ".cache" not in f.parts:
+            rel = f.relative_to(local_dir).as_posix()
+            local_files[rel] = f.stat().st_size
+
+    if not local_files:
+        print(red(f"  ✗ No files found in {local_dir}"))
+        return False
+
+    total_local_gb = sum(local_files.values()) / 1024**3
+
+    # Try Hub comparison
+    try:
+        hub_files = {
+            entry.rfilename: entry.size
+            for entry in _list_repo_tree(hf_repo)
+        }
     except Exception as e:
-        print(red(f"  ✗ Failed to download {info['label']}: {e}"))
-        raise
+        # Offline / Hub unreachable — fall back to size heuristic
+        expected_gb = info["size_gb"]
+        ratio = total_local_gb / expected_gb if expected_gb else 1
+        print(yellow(f"  ⚠  Hub unreachable ({e})"))
+        print(yellow(f"     Offline heuristic: {total_local_gb:.2f} GB local vs ~{expected_gb} GB expected ({ratio*100:.0f}%)"))
+        if ratio < 0.90:
+            print(red(f"  ✗ Local data is only {ratio*100:.0f}% of expected size — likely incomplete"))
+            return False
+        print(green(f"  ✓ Size looks reasonable ({len(local_files)} files, {total_local_gb:.2f} GB)"))
+        return True
+
+    missing   = []
+    corrupted = []
+    ok_count  = 0
+
+    for hub_path, hub_size in hub_files.items():
+        if hub_path not in local_files:
+            missing.append(hub_path)
+        elif hub_size is not None and local_files[hub_path] != hub_size:
+            corrupted.append((hub_path, local_files[hub_path], hub_size))
+        else:
+            ok_count += 1
+
+    if missing:
+        print(red(f"  ✗ Missing {len(missing)} file(s):"))
+        for p in missing[:10]:
+            print(red(f"      {p}"))
+        if len(missing) > 10:
+            print(red(f"      … and {len(missing) - 10} more"))
+
+    if corrupted:
+        print(red(f"  ✗ Size mismatch in {len(corrupted)} file(s):"))
+        for p, got, exp in corrupted[:10]:
+            print(red(f"      {p}  (local {got:,} B vs expected {exp:,} B)"))
+        if len(corrupted) > 10:
+            print(red(f"      … and {len(corrupted) - 10} more"))
+
+    if not missing and not corrupted:
+        print(green(
+            f"  ✓ All {ok_count} file(s) present and correct "
+            f"({total_local_gb:.2f} GB on disk)"
+        ))
+        return True
+
+    return False
+
+
+def _list_repo_tree(hf_repo: str):
+    """Return an iterable of RepoFile objects with .rfilename and .size."""
+    from huggingface_hub import list_repo_tree
+    try:
+        # list_repo_tree available in huggingface_hub >= 0.22
+        return list(list_repo_tree(hf_repo, recursive=True))
+    except AttributeError:
+        pass
+    # Fallback for older versions: list_repo_files gives names only (no size)
+    from huggingface_hub import list_repo_files
+
+    class _FakeEntry:
+        def __init__(self, name):
+            self.rfilename = name
+            self.size = None   # can't check sizes without metadata
+
+    return [_FakeEntry(n) for n in list_repo_files(hf_repo)]
+
+
+def validate_all(keys=None) -> None:
+    """Validate all (or specified) downloaded models and print a summary."""
+    targets = keys if keys else list(MODELS.keys())
+    downloaded = [k for k in targets if is_downloaded(k)]
+
+    if not downloaded:
+        print(yellow("  No downloaded models to validate."))
+        return
+
+    results = {}
+    for key in downloaded:
+        results[key] = validate_model(key)
+
+    # Summary table
+    print()
+    print(cyan("  Validation Summary"))
+    print(cyan("  " + "─" * 54))
+    for key, ok in results.items():
+        label = MODELS[key]["label"]
+        status = green("✓ OK") if ok else red("✗ INCOMPLETE / CORRUPT")
+        print(f"  {key:<20} {label:<30}  {status}")
+    print()
+
+    bad = [k for k, ok in results.items() if not ok]
+    if bad:
+        print(red(f"  {len(bad)} model(s) need re-downloading:"))
+        for k in bad:
+            print(red(f"    python download_models.py {k}"))
+    else:
+        print(green("  All validated models are complete."))
+    print()
 
 
 def interactive_menu():
@@ -232,6 +393,21 @@ def interactive_menu():
     print(cyan("=" * 56))
     print_status()
 
+    print(cyan("  Actions:"))
+    print("    [d] Download models")
+    print("    [v] Validate downloaded models")
+    print("    [q] Quit")
+    print()
+    action = input(cyan("  Your choice [d/v/q]: ")).strip().lower()
+
+    if action in ("q", ""):
+        return
+
+    if action == "v":
+        validate_all()
+        return
+
+    # ── Download flow ─────────────────────────────────────────────────────────
     keys_available = [k for k in MODELS if not is_downloaded(k)]
     if not keys_available:
         print(green("  All models already downloaded!"))
@@ -287,13 +463,27 @@ def main():
         epilog=__doc__,
     )
     parser.add_argument("models", nargs="*",
-                        help="Model keys to download (or 'all'). If omitted, shows interactive menu.")
+                        help="Model keys to download/validate (or 'all'). If omitted, shows interactive menu.")
     parser.add_argument("--list", "-l", action="store_true",
                         help="List model download status and exit")
+    parser.add_argument("--validate", "-v", action="store_true",
+                        help="Validate downloaded models for completeness (checks file list + sizes against HF Hub)")
     args = parser.parse_args()
 
     if args.list:
         print_status()
+        return
+
+    if args.validate:
+        # --validate [key1 key2 ...]  or  --validate (all downloaded)
+        if args.models and "all" not in args.models:
+            for k in args.models:
+                if k not in MODELS:
+                    print(red(f"  Unknown model key: {k}"))
+                    sys.exit(1)
+            validate_all(keys=args.models)
+        else:
+            validate_all()
         return
 
     if not args.models:
