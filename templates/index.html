@@ -107,6 +107,58 @@
       color: #f59e0b;
       border-bottom-color: #f59e0b;
     }
+    .tab-btn.tab-media.active {
+      color: #34d399;
+      border-bottom-color: #34d399;
+    }
+    /* Generated Media tab styles */
+    .media-section { margin-bottom: 2rem; }
+    .media-section-title {
+      font-size: 0.85rem; font-weight: 700; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--muted);
+      margin: 0 0 .75rem 0; padding-bottom: .4rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .media-job-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1rem; margin-bottom: .75rem;
+      transition: border-color .15s;
+    }
+    .media-job-card:hover { border-color: #34d399; }
+    .media-job-card.failed { border-left: 3px solid #ef4444; }
+    .media-job-card.done   { border-left: 3px solid #34d399; }
+    .media-job-card.running { border-left: 3px solid #f59e0b; }
+    .media-job-header { display:flex; align-items:baseline; gap:.75rem; flex-wrap:wrap; margin-bottom:.5rem; }
+    .media-job-title { font-weight:700; font-size:.95rem; }
+    .media-job-meta  { font-size:.75rem; color:var(--muted); }
+    .media-job-status-badge {
+      font-size:.7rem; font-weight:700; padding:.15rem .5rem;
+      border-radius:4px; text-transform:uppercase; margin-left:auto;
+    }
+    .badge-done    { background:#064e3b; color:#34d399; }
+    .badge-failed  { background:#450a0a; color:#ef4444; }
+    .badge-running { background:#451a03; color:#f59e0b; }
+    .badge-queued  { background:#1e1b4b; color:#a5b4fc; }
+    .media-params  { font-size:.78rem; color:var(--muted); margin-bottom:.5rem; }
+    .media-params span { margin-right:1rem; }
+    .media-files   { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.6rem; }
+    .media-file-chip {
+      display:inline-flex; align-items:center; gap:.3rem;
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:5px; padding:.2rem .55rem; font-size:.75rem;
+      color:var(--text); text-decoration:none;
+      transition: border-color .15s, color .15s;
+    }
+    .media-file-chip:hover { border-color:#34d399; color:#34d399; }
+    .media-file-chip.video { border-color:#38bdf8; }
+    .media-file-chip.video:hover { color:#38bdf8; }
+    .media-empty { color:var(--muted); font-size:.85rem; text-align:center; padding:2rem 0; }
+    .media-refresh-btn {
+      background:none; border:1px solid var(--border); color:var(--muted);
+      border-radius:6px; padding:.3rem .8rem; font-size:.8rem; cursor:pointer;
+      transition: border-color .15s, color .15s; margin-bottom:1rem;
+    }
+    .media-refresh-btn:hover { border-color:#34d399; color:#34d399; }
     .card.amber h2 { color: #f59e0b; }
     .card.amber { border-top: 3px solid #f59e0b; }
     .story-scene-card {
@@ -448,6 +500,7 @@
   <button class="tab-btn tab-stickman"        data-tab="stickman">🦾 Motion Stickman</button>
   <button class="tab-btn tab-wan"             data-tab="wan">✨ Wan2.1</button>
   <button class="tab-btn tab-story"           data-tab="story">📖 Story Video</button>
+  <button class="tab-btn tab-media"           data-tab="media">🗂 Generated Media</button>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════════
@@ -1008,6 +1061,25 @@
 
   </div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     TAB 6: Generated Media
+════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-media">
+  <div class="panel-inner">
+    <div class="card" style="border-top:3px solid #34d399">
+      <h2 style="color:#34d399">🗂 Generated Media</h2>
+      <p style="color:var(--muted);font-size:.85rem;margin:0 0 1rem 0">
+        All completed jobs — persisted across app restarts.
+      </p>
+      <button class="media-refresh-btn" id="btn-media-refresh">↻ Refresh</button>
+      <div id="media-sections">
+        <div class="media-empty">Loading…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="history-wrap">
   <div class="card" id="history-card">
     <h2>🕑 Recent Jobs</h2>
@@ -2028,6 +2100,132 @@ document.getElementById('btn-story-generate').addEventListener('click', async ()
     btn.disabled = false; btn.textContent = '🎬 Generate Story Video';
   }
 });
+
+// ── Generated Media tab ────────────────────────────────────────────────────
+const SECTION_META = {
+  t2v:       { label: '⚡ Text to Video',    color: '#6ee7b7' },
+  'cogvx-i2v': { label: '🖼 CogVideoX I2V', color: '#a78bfa' },
+  i2v:       { label: '🖼 Image to Video (SVD)', color: '#a78bfa' },
+  stickman:  { label: '🦾 Motion Stickman', color: '#f9a8d4' },
+  wan:       { label: '✨ Wan2.1',           color: '#38bdf8' },
+  story:     { label: '📖 Story Video',      color: '#f59e0b' },
+};
+
+function fmtDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+function jobStatusBadge(status) {
+  const map = { done:'badge-done', failed:'badge-failed',
+                queued:'badge-queued',
+                generating_images:'badge-running', generating_audio:'badge-running',
+                generating:'badge-running', loading_model:'badge-running',
+                stitching:'badge-running' };
+  const cls = map[status] || 'badge-queued';
+  return `<span class="media-job-status-badge ${cls}">${status}</span>`;
+}
+
+function jobParams(job) {
+  const parts = [];
+  if (job.model)      parts.push(`<span>Model: <b>${job.model}</b></span>`);
+  if (job.prompt)     parts.push(`<span>Prompt: <b>${job.prompt.slice(0,80)}${job.prompt.length>80?'…':''}</b></span>`);
+  if (job.style)      parts.push(`<span>Style: <b>${job.style}</b></span>`);
+  if (job.voice)      parts.push(`<span>Voice: <b>${job.voice}</b></span>`);
+  if (job.num_frames) parts.push(`<span>Frames: <b>${job.num_frames}</b></span>`);
+  if (job.num_steps)  parts.push(`<span>Steps: <b>${job.num_steps}</b></span>`);
+  if (job.resolution) parts.push(`<span>Res: <b>${job.resolution}</b></span>`);
+  if (job.elapsed_seconds) parts.push(`<span>Time: <b>${job.elapsed_seconds}s</b></span>`);
+  return parts.join('');
+}
+
+function fileChips(job) {
+  const chips = [];
+  // Final video
+  if (job.video_file) {
+    let url;
+    if (job.type === 'story')    url = `${API}/outputs/story/${job.video_file}`;
+    else if (job.type === 'wan') url = `${API}/outputs/wan/${job.video_file}`;
+    else if (job.type === 'i2v') url = `${API}/outputs/i2v/${job.video_file}`;
+    else if (job.type === 'stickman') url = `${API}/outputs/stickman/${job.video_file}`;
+    else                         url = `${API}/outputs/${job.video_file}`;
+    chips.push(`<a class="media-file-chip video" href="${url}" target="_blank" download>▶ ${job.video_file}</a>`);
+  }
+  // Intermediate files
+  (job.intermediate_files || []).forEach(f => {
+    chips.push(`<a class="media-file-chip" href="${API}${f.url}" target="_blank">${f.type === 'audio' ? '🔊' : '🖼'} ${f.label}</a>`);
+  });
+  // Scene images (story)
+  if (job.type === 'story' && job.scene_images && !job.intermediate_files?.length) {
+    job.scene_images.forEach((url, i) => {
+      chips.push(`<a class="media-file-chip" href="${API}${url}" target="_blank">🖼 Scene ${i+1}</a>`);
+    });
+  }
+  return chips.join('');
+}
+
+function renderMediaSections(jobs) {
+  const container = document.getElementById('media-sections');
+  if (!jobs.length) {
+    container.innerHTML = '<div class="media-empty">No completed jobs yet.</div>';
+    return;
+  }
+
+  // Group by type
+  const groups = {};
+  jobs.forEach(j => {
+    const t = j.type || 'unknown';
+    if (!groups[t]) groups[t] = [];
+    groups[t].push(j);
+  });
+
+  const typeOrder = ['t2v', 'cogvx-i2v', 'i2v', 'stickman', 'wan', 'story'];
+  const allTypes = [...new Set([...typeOrder, ...Object.keys(groups)])];
+
+  let html = '';
+  allTypes.forEach(type => {
+    if (!groups[type]) return;
+    const meta = SECTION_META[type] || { label: type, color: '#94a3b8' };
+    html += `<div class="media-section">
+      <div class="media-section-title" style="color:${meta.color}">${meta.label}</div>`;
+    groups[type].forEach(job => {
+      const cardClass = job.status === 'done' ? 'done' : job.status === 'failed' ? 'failed' : 'running';
+      const chips = fileChips(job);
+      html += `<div class="media-job-card ${cardClass}">
+        <div class="media-job-header">
+          <span class="media-job-title">${job.title || job.slug || job.job_id.slice(0,8)}</span>
+          <span class="media-job-meta">${fmtDate(job.created_at)}</span>
+          ${jobStatusBadge(job.status)}
+        </div>
+        <div class="media-params">${jobParams(job)}</div>
+        ${chips ? `<div class="media-files">${chips}</div>` : ''}
+        ${job.error ? `<div style="color:#ef4444;font-size:.78rem;margin-top:.4rem">Error: ${job.error}</div>` : ''}
+      </div>`;
+    });
+    html += '</div>';
+  });
+  container.innerHTML = html;
+}
+
+async function loadMediaHistory() {
+  try {
+    const res = await fetch(`${API}/api/jobs/history`);
+    const jobs = await res.json();
+    renderMediaSections(jobs);
+  } catch (e) {
+    document.getElementById('media-sections').innerHTML =
+      `<div class="media-empty" style="color:#ef4444">Failed to load: ${e.message}</div>`;
+  }
+}
+
+// Load when tab is clicked
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  if (btn.dataset.tab === 'media') {
+    btn.addEventListener('click', loadMediaHistory);
+  }
+});
+document.getElementById('btn-media-refresh').addEventListener('click', loadMediaHistory);
 </script>
 </body>
 </html>

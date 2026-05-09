@@ -122,7 +122,84 @@ def make_job_logger(slug: str, subdir: Path) -> logging.Logger:
 app = Flask(__name__, static_folder="static", template_folder="templates")
 CORS(app)
 
-jobs: dict = {}
+# ── Job persistence ───────────────────────────────────────────────────────────
+JOBS_FILE = BASE_DIR / "jobs_history.json"
+_jobs_lock = threading.Lock()
+
+
+class JobStore:
+    """Thread-safe in-memory job store that persists to jobs_history.json.
+
+    Each value is a plain dict.  Callers use store[job_id] = {...} to create
+    a job, then store[job_id].update(...) to mutate it — .update() is patched
+    onto the dict so it also triggers a save.
+    """
+
+    def __init__(self):
+        self._data: dict = {}
+        self._load()
+
+    # ── persistence ──────────────────────────────────────────────────────────
+    def _load(self):
+        if JOBS_FILE.exists():
+            try:
+                with open(JOBS_FILE, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                # Patch update() onto every loaded dict
+                for job_id, job in raw.items():
+                    self._patch(job)
+                self._data = raw
+                log.info(f"Loaded {len(raw)} job(s) from {JOBS_FILE}")
+            except Exception as e:
+                log.warning(f"Could not load {JOBS_FILE}: {e} — starting fresh")
+
+    def _save(self):
+        try:
+            with _jobs_lock:
+                tmp = JOBS_FILE.with_suffix(".tmp")
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(self._data, f, indent=2, default=str)
+                tmp.replace(JOBS_FILE)
+        except Exception as e:
+            log.warning(f"Could not save jobs_history.json: {e}")
+
+    def _patch(self, job: dict):
+        """Replace job.update() with a version that also persists."""
+        store_ref = self
+        original_update = dict.update
+
+        def _update(self_dict, *args, **kwargs):
+            original_update(self_dict, *args, **kwargs)
+            store_ref._save()
+
+        job.update = lambda *a, **kw: _update(job, *a, **kw)
+
+    # ── dict-like interface ──────────────────────────────────────────────────
+    def __setitem__(self, key, value):
+        self._patch(value)
+        self._data[key] = value
+        self._save()
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __contains__(self, key):
+        return key in self._data
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def values(self):
+        return self._data.values()
+
+    def items(self):
+        return self._data.items()
+
+    def keys(self):
+        return self._data.keys()
+
+
+jobs = JobStore()
 
 # ── Time estimation ───────────────────────────────────────────────────────────
 # CogVideoX-5B:   ~3-4 s/step on A100 (80GB), ~8-12 s/step on RTX 3090 (24GB)
@@ -1233,6 +1310,7 @@ def api_generate():
         "remaining_seconds": est["high_seconds"],
         "estimate":          est,
         "created_at":        time.time(),
+        "intermediate_files": [],
     }
 
     if model in ("cogvideox", "cogvideox15"):
@@ -1308,6 +1386,7 @@ def api_generate_cogvx_i2v():
         "remaining_seconds": est["high_seconds"],
         "estimate":          est,
         "created_at":        time.time(),
+        "intermediate_files": [],
     }
 
     t = threading.Thread(
@@ -1354,6 +1433,7 @@ def api_generate_i2v():
         "elapsed_seconds":   0,
         "remaining_seconds": num_steps * (8 if DEVICE == "cuda" else 120),
         "created_at":        time.time(),
+        "intermediate_files": [],
     }
 
     t = threading.Thread(
@@ -1397,6 +1477,7 @@ def api_generate_stickman():
         "elapsed_seconds":   0,
         "remaining_seconds": 60,
         "created_at":        time.time(),
+        "intermediate_files": [],
     }
 
     t = threading.Thread(
@@ -1481,6 +1562,7 @@ def api_generate_wan():
         "remaining_seconds": est_high,
         "estimate":          est,
         "created_at":        time.time(),
+        "intermediate_files": [],
     }
 
     t = threading.Thread(
@@ -1727,6 +1809,13 @@ def api_video(filename):
 def api_jobs():
     recent = sorted(jobs.values(), key=lambda j: j["created_at"], reverse=True)[:20]
     return jsonify(recent)
+
+
+@app.route("/api/jobs/history", methods=["GET"])
+def api_jobs_history():
+    """Return all persisted jobs, newest first, for the Generated Media tab."""
+    all_jobs = sorted(jobs.values(), key=lambda j: j["created_at"], reverse=True)
+    return jsonify(all_jobs)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2241,10 +2330,15 @@ def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug
             )
             scene_image_paths.append(img_path)
             scene_image_urls.append(f"/outputs/story/{slug}/scene_{i:03d}.png")
+            # Track intermediate files for Generated Media tab
+            intermediates = jobs[job_id].get("intermediate_files", [])
+            intermediates.append({"type": "image", "label": f"Scene {i+1} image",
+                                   "url": f"/outputs/story/{slug}/scene_{i:03d}.png"})
             jobs[job_id].update(
                 progress=int(((i + 1) / n) * 40),
                 message=f"Scene {i+1}/{n} image done",
                 scene_images=list(scene_image_urls),
+                intermediate_files=intermediates,
             )
             log.info(f"[story:{slug}] Scene {i+1}/{n} — image DONE → {img_path}")
             jlog.info(f"[{job_id}] Scene {i+1} image done")
@@ -2263,9 +2357,13 @@ def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug
             generate_hindi_tts(narration, voice, audio_path,
                                scene_idx=i, num_scenes=n)
             scene_audio_paths.append(audio_path)
+            intermediates = jobs[job_id].get("intermediate_files", [])
+            intermediates.append({"type": "audio", "label": f"Scene {i+1} audio",
+                                   "url": f"/outputs/story/{slug}/scene_{i:03d}.wav"})
             jobs[job_id].update(
                 progress=40 + int(((i + 1) / n) * 40),
                 message=f"Scene {i+1}/{n} audio done",
+                intermediate_files=intermediates,
             )
             log.info(f"[story:{slug}] Scene {i+1}/{n} — TTS DONE → {audio_path}")
             jlog.info(f"[{job_id}] Scene {i+1} audio done")
@@ -2355,8 +2453,12 @@ def api_generate_story():
         "error":           None,
         "elapsed_seconds": 0,
         "created_at":      time.time(),
+        "intermediate_files": [],
         "slug":            slug,
         "title":           title or slug,
+        "style":           style,
+        "voice":           voice,
+        "llm":             data.get("llm", ""),
     }
 
     threading.Thread(
