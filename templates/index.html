@@ -1989,7 +1989,7 @@ document.getElementById('btn-story-generate').addEventListener('click', async ()
 
     storyPollTimer = setInterval(async () => {
       try {
-        const pr = await fetch(`${API}/api/job_status/${jobId}`);
+        const pr = await fetch(`${API}/api/status/${jobId}`);
         const job = await pr.json();
 
         document.getElementById('story-prog-bar').style.width = (job.progress || 0) + '%';
