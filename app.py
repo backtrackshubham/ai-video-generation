@@ -1944,26 +1944,47 @@ def _get_sd_pipe(style: str):
     return pipe
 
 
-def generate_scene_image(image_prompt: str, style: str, out_path: Path) -> Path:
-    """Generate a still image for one scene."""
+def generate_scene_image(image_prompt: str, style: str, out_path: Path,
+                         job_id: str = None, scene_idx: int = 0,
+                         num_scenes: int = 1) -> Path:
+    """Generate a still image for one scene with live step logging."""
     from PIL import Image as PILImg  # noqa — ensure available
 
     lora_repo, lora_file, trigger = STYLE_LORAS.get(style, STYLE_LORAS["realistic"])
     full_prompt = f"{trigger}, {image_prompt}" if trigger else image_prompt
     negative    = "blurry, low quality, watermark, signature, text, ugly, deformed"
+    num_steps   = 25 if DEVICE == "cuda" else 8
+
+    log.info(f"  [scene {scene_idx+1}/{num_scenes}] Generating image: '{image_prompt[:60]}…'")
 
     pipe = _get_sd_pipe(style)
+
+    def _step_cb(pipe_obj, step_idx, timestep, callback_kwargs):
+        pct = int((step_idx + 1) / num_steps * 100)
+        log.info(f"    SD step {step_idx+1}/{num_steps} ({pct}%)")
+        if job_id and job_id in jobs:
+            base = int((scene_idx / num_scenes) * 40)
+            slice_size = int(40 / num_scenes)
+            step_pct = base + int((step_idx + 1) / num_steps * slice_size)
+            jobs[job_id].update(
+                progress=step_pct,
+                message=f"Scene {scene_idx+1}/{num_scenes} — image step {step_idx+1}/{num_steps}",
+            )
+        return callback_kwargs
 
     with torch.no_grad():
         result = pipe(
             prompt=full_prompt,
             negative_prompt=negative,
-            num_inference_steps=25 if DEVICE == "cuda" else 8,
+            num_inference_steps=num_steps,
             guidance_scale=7.5,
             width=512,
             height=512,
+            callback_on_step_end=_step_cb,
         )
+
     result.images[0].save(str(out_path))
+    log.info(f"  [scene {scene_idx+1}/{num_scenes}] Image saved → {out_path}")
     return out_path
 
 
@@ -2034,10 +2055,13 @@ def _get_indic_pipe():
     return tts
 
 
-def generate_hindi_tts(text: str, voice_key: str, out_path: Path) -> Path:
+def generate_hindi_tts(text: str, voice_key: str, out_path: Path,
+                       scene_idx: int = 0, num_scenes: int = 1) -> Path:
     """Generate Hindi audio — routes to MMS-TTS or IndicF5 based on voice_key."""
     import soundfile as sf
     import numpy as np
+
+    log.info(f"  [scene {scene_idx+1}/{num_scenes}] TTS: '{text[:60]}…'")
 
     if voice_key in INDIC_VOICES:
         # ── IndicF5 path (gated, better quality) ─────────────────
@@ -2060,7 +2084,7 @@ def generate_hindi_tts(text: str, voice_key: str, out_path: Path) -> Path:
     if audio.ndim > 1:
         audio = audio[0]
     sf.write(str(out_path), audio, result["sampling_rate"])
-    return out_path
+    log.info(f"  [scene {scene_idx+1}/{num_scenes}] Audio saved → {out_path}")
     return out_path
 
 
@@ -2078,9 +2102,12 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
     tmp_dir = Path(tempfile.mkdtemp())
     scene_videos = []
     durations = []
+    n_scenes = len(scene_images)
+    log.info(f"[stitch] Building {n_scenes} scene clip(s) in {tmp_dir}…")
 
     # ── Step 1: render one video clip per scene (image + audio) ──
     for i, (img_path, audio_path) in enumerate(zip(scene_images, scene_audios)):
+        log.info(f"[stitch] Scene {i+1}/{n_scenes} — probing audio {audio_path}")
         probe = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(audio_path)],
             capture_output=True, text=True,
@@ -2095,6 +2122,7 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
         except Exception:
             pass
         durations.append(duration)
+        log.info(f"[stitch] Scene {i+1}/{n_scenes} — audio duration={duration:.2f}s, encoding clip…")
 
         scene_mp4 = tmp_dir / f"scene_{i:03d}.mp4"
         subprocess.run([
@@ -2110,8 +2138,10 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
             str(scene_mp4),
         ], check=True)
         scene_videos.append(scene_mp4)
+        log.info(f"[stitch] Scene {i+1}/{n_scenes} — clip done → {scene_mp4}")
 
     # ── Step 2: stitch with xfade or plain concat ─────────────────
+    log.info(f"[stitch] Joining {n_scenes} clips with transition={transition}…")
     if transition == "none" or len(scene_videos) == 1:
         # Simple concat — no re-encode needed
         concat_list = tmp_dir / "concat.txt"
@@ -2173,6 +2203,7 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
             str(out_path),
         ], check=True)
 
+    log.info(f"[stitch] Video written → {out_path}")
     return out_path
 
 
@@ -2182,6 +2213,7 @@ def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug
                          transition: str = "fade", transition_duration: float = 0.8):
     jlog = make_job_logger(slug, LOG_STORY_DIR)
     jlog.info(f"[{job_id}] Story gen | scenes={len(scenes)} style={style} voice={voice}")
+    log.info(f"[story:{slug}] Starting — {len(scenes)} scenes, style={style}, voice={voice}")
 
     job_dir = OUTPUT_STORY_DIR / slug
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -2193,34 +2225,53 @@ def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug
     start_time = time.time()
 
     try:
-        # Phase 1: images
+        # ── Phase 1: Generate images ──────────────────────────────────────────
+        log.info(f"[story:{slug}] Phase 1/3 — generating {n} scene image(s) with SD 1.5 ({style})…")
         for i, scene in enumerate(scenes):
             jobs[job_id].update(
                 status="generating_images",
                 progress=int((i / n) * 40),
                 message=f"Generating image for scene {i+1}/{n}…",
             )
+            log.info(f"[story:{slug}] Scene {i+1}/{n} — image start")
             img_path = job_dir / f"scene_{i:03d}.png"
-            generate_scene_image(scene.get("image_prompt", ""), style, img_path)
+            generate_scene_image(
+                scene.get("image_prompt", ""), style, img_path,
+                job_id=job_id, scene_idx=i, num_scenes=n,
+            )
             scene_image_paths.append(img_path)
             scene_image_urls.append(f"/outputs/story/{slug}/scene_{i:03d}.png")
-            jobs[job_id].update(scene_images=scene_image_urls)
+            jobs[job_id].update(
+                progress=int(((i + 1) / n) * 40),
+                message=f"Scene {i+1}/{n} image done",
+                scene_images=list(scene_image_urls),
+            )
+            log.info(f"[story:{slug}] Scene {i+1}/{n} — image DONE → {img_path}")
             jlog.info(f"[{job_id}] Scene {i+1} image done")
 
-        # Phase 2: TTS audio
+        # ── Phase 2: Generate TTS audio ───────────────────────────────────────
+        log.info(f"[story:{slug}] Phase 2/3 — generating {n} Hindi voiceover(s)…")
         for i, scene in enumerate(scenes):
             jobs[job_id].update(
                 status="generating_audio",
                 progress=40 + int((i / n) * 40),
                 message=f"Generating Hindi voiceover for scene {i+1}/{n}…",
             )
+            log.info(f"[story:{slug}] Scene {i+1}/{n} — TTS start")
             narration = scene.get("narration", "").strip() or "दृश्य।"
             audio_path = job_dir / f"scene_{i:03d}.wav"
-            generate_hindi_tts(narration, voice, audio_path)
+            generate_hindi_tts(narration, voice, audio_path,
+                               scene_idx=i, num_scenes=n)
             scene_audio_paths.append(audio_path)
+            jobs[job_id].update(
+                progress=40 + int(((i + 1) / n) * 40),
+                message=f"Scene {i+1}/{n} audio done",
+            )
+            log.info(f"[story:{slug}] Scene {i+1}/{n} — TTS DONE → {audio_path}")
             jlog.info(f"[{job_id}] Scene {i+1} audio done")
 
-        # Phase 3: stitch
+        # ── Phase 3: Stitch video ─────────────────────────────────────────────
+        log.info(f"[story:{slug}] Phase 3/3 — stitching video (transition={transition})…")
         jobs[job_id].update(status="stitching", progress=85, message="Stitching scenes into video…")
         video_filename = f"{slug}.mp4"
         out_path = OUTPUT_STORY_DIR / video_filename
@@ -2235,9 +2286,11 @@ def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug
             message=f"Done in {elapsed}s — {n} scenes",
             elapsed_seconds=elapsed,
         )
+        log.info(f"[story:{slug}] DONE → {out_path} ({elapsed}s)")
         jlog.info(f"[{job_id}] Story done → {out_path} ({elapsed}s)")
 
     except Exception as e:
+        log.error(f"[story:{slug}] FAILED: {e}", exc_info=True)
         jlog.error(f"[{job_id}] Story failed: {e}", exc_info=True)
         jobs[job_id].update(status="failed", error=str(e), message=f"Failed: {e}")
 
