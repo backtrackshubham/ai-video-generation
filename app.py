@@ -1884,12 +1884,61 @@ _llm_cache        = {}   # key: llm name
 _indic_tts_cache  = {}   # key: "pipe"
 
 
+def _unload_llm():
+    """Remove all LLM models from memory and free GPU/RAM before loading image models."""
+    global _llm_cache
+    if not _llm_cache:
+        return
+    log.info("Unloading LLM from memory before image model load…")
+    for key, (backend, pipe) in list(_llm_cache.items()):
+        try:
+            if backend == "gguf":
+                pipe.close()          # llama_cpp: releases native memory
+            else:
+                # transformers pipeline: move model to CPU then delete
+                if hasattr(pipe, "model"):
+                    pipe.model.cpu()
+                del pipe
+        except Exception as e:
+            log.warning(f"LLM unload warning ({key}): {e}")
+    _llm_cache.clear()
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    log.info("LLM unloaded.")
+
+
+def _unload_sd():
+    """Remove all SD pipelines from memory and free GPU/RAM before loading LLM."""
+    global _sd_pipe_cache
+    if not _sd_pipe_cache:
+        return
+    log.info("Unloading SD image model from memory…")
+    for key, pipe in list(_sd_pipe_cache.items()):
+        try:
+            if hasattr(pipe, "unet"):
+                pipe.unet.cpu()
+            del pipe
+        except Exception as e:
+            log.warning(f"SD unload warning ({key}): {e}")
+    _sd_pipe_cache.clear()
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    log.info("SD image model unloaded.")
+
+
 # ── LLM: scene breakdown ──────────────────────────────────────────────────────
 
 def _get_llm_pipe(llm_key: str):
     """Load LLM pipeline, cached. GGUF variant uses llama-cpp-python."""
     if llm_key in _llm_cache:
         return _llm_cache[llm_key]
+
+    # Free SD image model memory before loading LLM
+    _unload_sd()
 
     if llm_key in STORY_LLM_GGUF_FILE:
         # ── GGUF path via llama-cpp-python ────────────────────────
@@ -2197,6 +2246,9 @@ def _get_sd_pipe(style: str, model_key: str = IMAGE_MODEL_DEFAULT):
     cache_key = f"{model_key}:{style}"
     if cache_key in _sd_pipe_cache:
         return _sd_pipe_cache[cache_key]
+
+    # Free LLM memory before loading image model
+    _unload_llm()
 
     from diffusers import StableDiffusionPipeline
 
