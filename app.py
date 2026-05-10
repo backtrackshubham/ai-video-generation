@@ -2327,6 +2327,20 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
     import subprocess
     import tempfile
 
+    # Resolve ffmpeg/ffprobe — prefer bundled imageio-ffmpeg, fall back to system PATH
+    try:
+        import imageio_ffmpeg
+        _ffmpeg  = imageio_ffmpeg.get_ffmpeg_exe()
+        # ffprobe sits alongside ffmpeg in the same binary directory
+        _ffprobe = str(Path(_ffmpeg).parent / "ffprobe")
+        if not Path(_ffprobe).exists():
+            _ffprobe = "ffprobe"   # fall back to system
+    except ImportError:
+        _ffmpeg  = "ffmpeg"
+        _ffprobe = "ffprobe"
+
+    log.info(f"[stitch] ffmpeg={_ffmpeg}")
+
     tmp_dir = Path(tempfile.mkdtemp())
     scene_videos = []
     durations = []
@@ -2337,7 +2351,7 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
     for i, (img_path, audio_path) in enumerate(zip(scene_images, scene_audios)):
         log.info(f"[stitch] Scene {i+1}/{n_scenes} — probing audio {audio_path}")
         probe = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(audio_path)],
+            [_ffprobe, "-v", "quiet", "-print_format", "json", "-show_streams", str(audio_path)],
             capture_output=True, text=True,
         )
         duration = 5.0
@@ -2354,7 +2368,7 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
 
         scene_mp4 = tmp_dir / f"scene_{i:03d}.mp4"
         subprocess.run([
-            "ffmpeg", "-y",
+            _ffmpeg, "-y",
             "-loop", "1", "-i", str(img_path),
             "-i", str(audio_path),
             "-c:v", "libx264", "-tune", "stillimage",
@@ -2377,7 +2391,7 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
             for sv in scene_videos:
                 f.write(f"file '{sv}'\n")
         subprocess.run([
-            "ffmpeg", "-y",
+            _ffmpeg, "-y",
             "-f", "concat", "-safe", "0",
             "-i", str(concat_list),
             "-c", "copy",
@@ -2422,7 +2436,7 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
         filter_complex = ";".join(vfilter_parts + afilter_parts)
 
         subprocess.run([
-            "ffmpeg", "-y",
+            _ffmpeg, "-y",
             *inputs,
             "-filter_complex", filter_complex,
             "-map", "[vout]", "-map", "[aout]",
