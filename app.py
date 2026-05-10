@@ -1962,6 +1962,66 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
     import re as _re
     backend, pipe = _get_llm_pipe(llm_key)
 
+    # ── Helper functions (defined early so both GGUF and transformers paths can use them) ──
+    def _extract_complete_json_array(text: str):
+        """Find outermost [...] using bracket depth counting."""
+        start = text.find('[')
+        if start == -1:
+            return None
+        depth = 0
+        in_string = False
+        escape = False
+        for i, ch in enumerate(text[start:], start):
+            if escape:
+                escape = False
+                continue
+            if ch == '\\' and in_string:
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '[':
+                depth += 1
+            elif ch == ']':
+                depth -= 1
+                if depth == 0:
+                    return text[start:i+1]
+        return None
+
+    def _salvage_partial_scenes(text: str) -> list:
+        """Extract fully-formed JSON objects from a truncated array."""
+        salvaged = []
+        for m in _re.finditer(r'\{[^{}]*\}', text, _re.DOTALL):
+            try:
+                obj = json.loads(m.group(0))
+                if isinstance(obj, dict) and ("narration" in obj or "image_prompt" in obj):
+                    salvaged.append(obj)
+            except json.JSONDecodeError:
+                pass
+        return salvaged
+
+    def _parse_string_list(raw: str) -> list:
+        """Parse a JSON array of strings; fallback to newline split."""
+        clean = _re.sub(r'```(?:json)?\s*', '', raw).strip()
+        json_str = _extract_complete_json_array(clean) or _extract_complete_json_array(raw)
+        if json_str:
+            try:
+                parsed = json.loads(json_str)
+                if isinstance(parsed, list):
+                    return [str(x) for x in parsed if x]
+            except json.JSONDecodeError:
+                pass
+        # Fallback: one item per line, strip JSON punctuation
+        result = []
+        for line in clean.splitlines():
+            line = line.strip().strip('",[]').strip()
+            if len(line) > 5:
+                result.append(line)
+        return result
+
     system_prompt = (
         "You are a cinematographer and creative director specialising in Indian mythology and epic storytelling. "
         f"Split the story into exactly {num_scenes} scenes. "
@@ -1998,26 +2058,9 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
         )
         narr_raw = narr_resp["choices"][0]["message"]["content"]
         log.info(f"GGUF step-1 narration raw (first 500): {narr_raw[:500]}")
-
-        # Parse narrations
-        narr_clean = _re.sub(r'```(?:json)?\s*', '', narr_raw).strip()
-        narr_json_str = _extract_complete_json_array(narr_clean) or _extract_complete_json_array(narr_raw)
-        narrations = []
-        if narr_json_str:
-            try:
-                parsed = json.loads(narr_json_str)
-                if isinstance(parsed, list):
-                    narrations = [str(x) for x in parsed if x]
-            except json.JSONDecodeError:
-                pass
-        # Fallback: split by lines/sentences if JSON failed
+        narrations = _parse_string_list(narr_raw)[:num_scenes]
         if not narrations:
-            log.warning("GGUF step-1: JSON parse failed, splitting by newline/period")
-            for line in (narr_clean or narr_raw).splitlines():
-                line = line.strip().strip('",[]')
-                if len(line) > 5:
-                    narrations.append(line)
-        narrations = narrations[:num_scenes]
+            log.warning("GGUF step-1: no narrations parsed")
         log.info(f"GGUF step-1: got {len(narrations)} narrations")
 
         # Step 2: get English image prompts for each narration
@@ -2040,25 +2083,7 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
         )
         img_raw = img_resp["choices"][0]["message"]["content"]
         log.info(f"GGUF step-2 image prompts raw (first 500): {img_raw[:500]}")
-
-        # Parse image prompts
-        img_clean = _re.sub(r'```(?:json)?\s*', '', img_raw).strip()
-        img_json_str = _extract_complete_json_array(img_clean) or _extract_complete_json_array(img_raw)
-        image_prompts = []
-        if img_json_str:
-            try:
-                parsed = json.loads(img_json_str)
-                if isinstance(parsed, list):
-                    image_prompts = [str(x) for x in parsed if x]
-            except json.JSONDecodeError:
-                pass
-        # Fallback: split by lines
-        if not image_prompts:
-            log.warning("GGUF step-2: JSON parse failed, splitting by newline")
-            for line in (img_clean or img_raw).splitlines():
-                line = line.strip().strip('",[]')
-                if len(line) > 5:
-                    image_prompts.append(line)
+        image_prompts = _parse_string_list(img_raw)
         log.info(f"GGUF step-2: got {len(image_prompts)} image prompts")
 
         # Zip together — pad missing image prompts with empty string
@@ -2086,47 +2111,6 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
 
     # Strip markdown code fences
     result_clean = _re.sub(r'```(?:json)?\s*', '', result).strip()
-
-    def _extract_complete_json_array(text: str):
-        """Find outermost [...] using bracket depth counting."""
-        start = text.find('[')
-        if start == -1:
-            return None
-        depth = 0
-        in_string = False
-        escape = False
-        for i, ch in enumerate(text[start:], start):
-            if escape:
-                escape = False
-                continue
-            if ch == '\\' and in_string:
-                escape = True
-                continue
-            if ch == '"':
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if ch == '[':
-                depth += 1
-            elif ch == ']':
-                depth -= 1
-                if depth == 0:
-                    return text[start:i+1]
-        return None
-
-    def _salvage_partial_scenes(text: str) -> list:
-        """Extract fully-formed JSON objects from a truncated array."""
-        salvaged = []
-        # Match complete {...} objects (handles nested quotes via greedy approach)
-        for m in _re.finditer(r'\{[^{}]*\}', text, _re.DOTALL):
-            try:
-                obj = json.loads(m.group(0))
-                if isinstance(obj, dict) and ("narration" in obj or "image_prompt" in obj):
-                    salvaged.append(obj)
-            except json.JSONDecodeError:
-                pass
-        return salvaged
 
     # Try full parse first
     json_str = _extract_complete_json_array(result_clean) or _extract_complete_json_array(result)
