@@ -127,12 +127,23 @@ JOBS_FILE = BASE_DIR / "jobs_history.json"
 _jobs_lock = threading.Lock()
 
 
+class TrackedJob(dict):
+    """A dict subclass whose .update() also triggers a JobStore save."""
+
+    def __init__(self, store_ref, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._store_ref = store_ref
+
+    def update(self, *args, **kwargs):
+        super().update(*args, **kwargs)
+        self._store_ref._save()
+
+
 class JobStore:
     """Thread-safe in-memory job store that persists to jobs_history.json.
 
-    Each value is a plain dict.  Callers use store[job_id] = {...} to create
-    a job, then store[job_id].update(...) to mutate it — .update() is patched
-    onto the dict so it also triggers a save.
+    Each value is a TrackedJob (dict subclass) so that .update() automatically
+    triggers a save — no monkey-patching of built-in dict slots required.
     """
 
     def __init__(self):
@@ -145,10 +156,8 @@ class JobStore:
             try:
                 with open(JOBS_FILE, "r", encoding="utf-8") as f:
                     raw = json.load(f)
-                # Patch update() onto every loaded dict
                 for job_id, job in raw.items():
-                    self._patch(job)
-                self._data = raw
+                    self._data[job_id] = TrackedJob(self, job)
                 log.info(f"Loaded {len(raw)} job(s) from {JOBS_FILE}")
             except Exception as e:
                 log.warning(f"Could not load {JOBS_FILE}: {e} — starting fresh")
@@ -163,21 +172,10 @@ class JobStore:
         except Exception as e:
             log.warning(f"Could not save jobs_history.json: {e}")
 
-    def _patch(self, job: dict):
-        """Replace job.update() with a version that also persists."""
-        store_ref = self
-        original_update = dict.update
-
-        def _update(self_dict, *args, **kwargs):
-            original_update(self_dict, *args, **kwargs)
-            store_ref._save()
-
-        job.update = lambda *a, **kw: _update(job, *a, **kw)
-
     # ── dict-like interface ──────────────────────────────────────────────────
     def __setitem__(self, key, value):
-        self._patch(value)
-        self._data[key] = value
+        tracked = TrackedJob(self, value)
+        self._data[key] = tracked
         self._save()
 
     def __getitem__(self, key):
