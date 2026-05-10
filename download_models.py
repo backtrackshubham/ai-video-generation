@@ -150,7 +150,7 @@ MODELS = {
     },
     "lora-3d": {
         "hf_repo":  "artificialguybr/3d-redmond-1-5v-3d-render-style-for-liberte-redmond-sd-1-5",
-        "filename": "3DRedmond-3DRenderStyle-3DRenderAF.safetensors",
+        "filename": "3DRedmond15V-LiberteRedmond-3DRenderStyle-3DRenderAF.safetensors",
         "size_gb":  0.1,
         "label":    "LoRA: Futuristic/Sci-Fi (3D render) style",
         "lora":     True,

@@ -1851,10 +1851,10 @@ STYLE_LORAS = {
                    "CuteCartoon15V-LiberteRedmodModel-Cartoon-CuteCartoonAF.safetensors",
                    "CuteCartoonAF, Cartoon style"),
     "futuristic": ("artificialguybr/3d-redmond-1-5v-3d-render-style-for-liberte-redmond-sd-1-5",
-                   "3DRedmond-3DRenderStyle-3DRenderAF.safetensors",
+                   "3DRedmond15V-LiberteRedmond-3DRenderStyle-3DRenderAF.safetensors",
                    "3DRenderAF, futuristic, sleek, neon, cinematic"),
     "scifi":      ("artificialguybr/3d-redmond-1-5v-3d-render-style-for-liberte-redmond-sd-1-5",
-                   "3DRedmond-3DRenderStyle-3DRenderAF.safetensors",
+                   "3DRedmond15V-LiberteRedmond-3DRenderStyle-3DRenderAF.safetensors",
                    "3DRenderAF, sci-fi, space, technology, cinematic lighting"),
 }
 
