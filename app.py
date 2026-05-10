@@ -2092,9 +2092,9 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
             scenes = all_arrays
 
     out = _normalise(scenes)[:num_scenes]
-    while len(out) < num_scenes:
-        out.append({"narration": "", "image_prompt": ""})
-
+    # Do NOT pad with empty scenes — return only what the LLM actually generated.
+    # The frontend shows however many scenes came back; the user can re-run breakdown if needed.
+    log.info(f"Scene breakdown: requested {num_scenes}, got {len(out)} scene(s)")
     return out
 
 

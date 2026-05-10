@@ -46,6 +46,7 @@ tqdm
 # --- Story Video pipeline ---
 soundfile          # Hindi TTS audio saving
 safetensors        # LoRA weight loading for SD 1.5
+peft               # Required by diffusers for LoRA weight loading
 # llama-cpp-python: GCC 8 / RHEL 8 requires v0.2.90 + linker flag — see setup.py
 # GCC 9+ / newer systems: pip install llama-cpp-python (latest)
 # RHEL 8 install: CMAKE_ARGS="-DCMAKE_EXE_LINKER_FLAGS='-lstdc++fs' -DCMAKE_SHARED_LINKER_FLAGS='-lstdc++fs'" pip install llama-cpp-python==0.2.90
