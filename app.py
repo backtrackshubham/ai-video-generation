@@ -1833,7 +1833,7 @@ STORY_LLM_MODELS = {
 
 # GGUF filename to download from the repo
 STORY_LLM_GGUF_FILE = {
-    "qwen-gguf": "qwen2.5-7b-instruct-q4_k_m.gguf",
+    "qwen-gguf": "qwen2.5-7b-instruct-q3_k_m.gguf",
 }
 
 SD15_MODEL_ID = "stable-diffusion-v1-5/stable-diffusion-v1-5"

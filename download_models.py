@@ -110,9 +110,9 @@ MODELS = {
     },
     "qwen-7b-gguf": {
         "hf_repo":     "Qwen/Qwen2.5-7B-Instruct-GGUF",
-        "size_gb":     5,
-        "label":       "Qwen2.5-7B-Instruct GGUF Q4 (Story scene LLM — fast on CPU)",
-        "filename":    "qwen2.5-7b-instruct-q4_k_m.gguf",
+        "size_gb":     3.8,
+        "label":       "Qwen2.5-7B-Instruct GGUF Q3_K_M (Story scene LLM — fast on CPU)",
+        "filename":    "qwen2.5-7b-instruct-q3_k_m.gguf",
         "single_file": True,   # only download this one file, not the whole repo
     },
     "phi3-mini": {
