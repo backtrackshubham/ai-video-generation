@@ -1888,9 +1888,17 @@ def _get_llm_pipe(llm_key: str):
 
         repo_id  = STORY_LLM_MODELS[llm_key]
         filename = STORY_LLM_GGUF_FILE[llm_key]
-        log.info(f"Downloading/loading GGUF {repo_id}/{filename}…")
+        log.info(f"Loading GGUF {repo_id}/{filename}…")
 
-        gguf_path = hf_hub_download(repo_id=repo_id, filename=filename)
+        # Check local download first (download_models.py saves to hf_cache/<cache-name>/<filename>)
+        local_gguf = HF_CACHE / _hf_cache_name(repo_id) / filename
+        if local_gguf.exists():
+            gguf_path = str(local_gguf)
+            log.info(f"Using local GGUF: {gguf_path}")
+        else:
+            from huggingface_hub import hf_hub_download
+            log.info("GGUF not found locally — downloading from HuggingFace…")
+            gguf_path = hf_hub_download(repo_id=repo_id, filename=filename)
         n_gpu = -1 if DEVICE == "cuda" else 0   # -1 = all layers on GPU
         llm = Llama(
             model_path=gguf_path,

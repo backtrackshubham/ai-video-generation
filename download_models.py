@@ -101,10 +101,11 @@ MODELS = {
         "label":   "Qwen2.5-7B-Instruct FP16 (Story scene LLM)",
     },
     "qwen-7b-gguf": {
-        "hf_repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
-        "size_gb": 5,
-        "label":   "Qwen2.5-7B-Instruct GGUF Q4 (Story scene LLM — fast on CPU)",
-        "filename": "qwen2.5-7b-instruct-q4_k_m.gguf",
+        "hf_repo":     "Qwen/Qwen2.5-7B-Instruct-GGUF",
+        "size_gb":     5,
+        "label":       "Qwen2.5-7B-Instruct GGUF Q4 (Story scene LLM — fast on CPU)",
+        "filename":    "qwen2.5-7b-instruct-q4_k_m.gguf",
+        "single_file": True,   # only download this one file, not the whole repo
     },
     "phi3-mini": {
         "hf_repo": "microsoft/Phi-3.5-mini-instruct",
@@ -158,14 +159,14 @@ def _local_model_dir(hf_repo: str) -> Path:
 def is_downloaded(key: str) -> bool:
     info = MODELS[key]
     if info.get("lora"):
-        # LoRAs stored flat in models/loras/<filename>
         return (LORA_DIR / info["filename"]).exists()
-    # Non-LoRA models: downloaded with local_dir into models/hf_cache/<cache-name>/
-    # Consider downloaded if directory is non-empty
+    if info.get("single_file"):
+        # Single-file model stored in hf_cache/<cache-name>/<filename>
+        return (_local_model_dir(info["hf_repo"]) / info["filename"]).exists()
+    # Full repo: downloaded with local_dir — check for any real file
     local_dir = _local_model_dir(info["hf_repo"])
     if not local_dir.exists():
         return False
-    # Check for any real file (not just .cache metadata)
     return any(
         f for f in local_dir.rglob("*")
         if f.is_file() and ".cache" not in f.parts
@@ -190,18 +191,21 @@ def download_model(key: str):
 
     print(cyan(f"\n  Downloading {info['label']} (~{info['size_gb']} GB)…"))
     try:
-        if info.get("lora"):
-            # ── LoRA: single file, flat into models/loras/ ──
+        if info.get("lora") or info.get("single_file"):
+            # ── Single-file download (LoRA or GGUF) ──
+            # LoRAs go to models/loras/; single_file models go to their cache dir
+            dest_dir = LORA_DIR if info.get("lora") else _local_model_dir(info["hf_repo"])
+            dest_dir.mkdir(parents=True, exist_ok=True)
             from huggingface_hub import hf_hub_download
             hf_hub_download(
                 repo_id=info["hf_repo"],
                 filename=info["filename"],
-                local_dir=str(LORA_DIR),
+                local_dir=str(dest_dir),
             )
-            # Ensure the file ended up at the expected flat location
-            dest = LORA_DIR / info["filename"]
+            # hf_hub_download may nest the file; ensure it's at dest_dir/<filename>
+            dest = dest_dir / info["filename"]
             if not dest.exists():
-                for f in LORA_DIR.rglob(info["filename"]):
+                for f in dest_dir.rglob(info["filename"]):
                     import shutil
                     shutil.copy2(str(f), str(dest))
                     break
@@ -242,9 +246,10 @@ def validate_model(key: str) -> bool:
 
     hf_repo = info["hf_repo"]
 
-    # ── LoRA: single-file check ───────────────────────────────────────────────
-    if info.get("lora"):
-        local_file = LORA_DIR / info["filename"]
+    # ── Single-file check (LoRA or GGUF) ─────────────────────────────────────
+    if info.get("lora") or info.get("single_file"):
+        dest_dir = LORA_DIR if info.get("lora") else _local_model_dir(hf_repo)
+        local_file = dest_dir / info["filename"]
         if not local_file.exists():
             print(red(f"  ✗ Missing: {info['filename']}"))
             return False
