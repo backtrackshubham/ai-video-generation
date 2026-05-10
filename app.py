@@ -2463,19 +2463,30 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
     import subprocess
     import tempfile
 
-    # Resolve ffmpeg/ffprobe — prefer bundled imageio-ffmpeg, fall back to system PATH
+    # Resolve ffmpeg — prefer bundled imageio-ffmpeg, fall back to system PATH
     try:
         import imageio_ffmpeg
-        _ffmpeg  = imageio_ffmpeg.get_ffmpeg_exe()
-        # ffprobe sits alongside ffmpeg in the same binary directory
-        _ffprobe = str(Path(_ffmpeg).parent / "ffprobe")
-        if not Path(_ffprobe).exists():
-            _ffprobe = "ffprobe"   # fall back to system
+        _ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     except ImportError:
-        _ffmpeg  = "ffmpeg"
-        _ffprobe = "ffprobe"
+        _ffmpeg = "ffmpeg"
 
     log.info(f"[stitch] ffmpeg={_ffmpeg}")
+
+    def _audio_duration(wav_path: Path) -> float:
+        """Get WAV duration in seconds using pure Python (no ffprobe needed)."""
+        try:
+            import soundfile as sf
+            info = sf.info(str(wav_path))
+            return info.duration
+        except Exception:
+            pass
+        try:
+            import wave
+            with wave.open(str(wav_path), "rb") as wf:
+                return wf.getnframes() / wf.getframerate()
+        except Exception:
+            pass
+        return 5.0  # safe default if both fail
 
     tmp_dir = Path(tempfile.mkdtemp())
     scene_videos = []
@@ -2486,19 +2497,7 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
     # ── Step 1: render one video clip per scene (image + audio) ──
     for i, (img_path, audio_path) in enumerate(zip(scene_images, scene_audios)):
         log.info(f"[stitch] Scene {i+1}/{n_scenes} — probing audio {audio_path}")
-        probe = subprocess.run(
-            [_ffprobe, "-v", "quiet", "-print_format", "json", "-show_streams", str(audio_path)],
-            capture_output=True, text=True,
-        )
-        duration = 5.0
-        try:
-            info = json.loads(probe.stdout)
-            for stream in info.get("streams", []):
-                if stream.get("codec_type") == "audio":
-                    duration = float(stream.get("duration", 5.0))
-                    break
-        except Exception:
-            pass
+        duration = _audio_duration(Path(audio_path))
         durations.append(duration)
         log.info(f"[stitch] Scene {i+1}/{n_scenes} — audio duration={duration:.2f}s, encoding clip…")
 
