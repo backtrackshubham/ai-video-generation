@@ -1964,7 +1964,7 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": f"Script:\n{script}"},
             ],
-            max_tokens=1024,
+            max_tokens=4096,
             temperature=0.0,
         )
         result = response["choices"][0]["message"]["content"]
@@ -1980,14 +1980,39 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
         else:
             prompt_text = f"<s>[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n{script} [/INST]"
 
-        raw = pipe(prompt_text)[0]["generated_text"]
+        raw = pipe(prompt_text, max_new_tokens=4096)[0]["generated_text"]
         result = raw[len(prompt_text):] if raw.startswith(prompt_text) else raw
 
-    match = _re.search(r'\[.*\]', result, _re.DOTALL)
-    if not match:
+    log.info(f"LLM raw output (first 800 chars): {result[:800]}")
+
+    # Strip markdown code fences if present
+    result_clean = _re.sub(r'```(?:json)?\s*', '', result).strip()
+
+    # Find the outermost JSON array (handle nested brackets properly)
+    def _extract_json_array(text: str):
+        start = text.find('[')
+        if start == -1:
+            return None
+        depth = 0
+        for i, ch in enumerate(text[start:], start):
+            if ch == '[':
+                depth += 1
+            elif ch == ']':
+                depth -= 1
+                if depth == 0:
+                    return text[start:i+1]
+        return None
+
+    json_str = _extract_json_array(result_clean) or _extract_json_array(result)
+    if not json_str:
+        log.error(f"LLM full output (no JSON array found):\n{result}")
         raise ValueError(f"LLM did not return a JSON array. Raw:\n{result[:500]}")
 
-    scenes = json.loads(match.group(0))
+    try:
+        scenes = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        log.error(f"JSON parse failed: {e}\nJSON string:\n{json_str[:800]}")
+        raise ValueError(f"LLM returned invalid JSON: {e}")
     if not isinstance(scenes, list):
         raise ValueError("LLM output is not a JSON array.")
 

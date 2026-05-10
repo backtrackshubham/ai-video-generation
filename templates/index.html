@@ -1029,7 +1029,10 @@
 
       <div id="story-dl-banner" class="model-dl-banner hidden"></div>
 
-      <button class="gen-btn" style="background:#f59e0b;color:#000;margin-top:18px" id="btn-story-breakdown">🔍 Break into Scenes</button>
+      <div style="display:flex;gap:12px;margin-top:18px;flex-wrap:wrap">
+        <button class="gen-btn" style="background:#f59e0b;color:#000" id="btn-story-breakdown">🔍 Break into Scenes</button>
+        <button class="gen-btn" style="background:#f59e0b;color:#000" id="btn-story-generate" disabled title="Run 'Break into Scenes' first">🎬 Generate Story Video</button>
+      </div>
     </div>
 
     <!-- Step 2: Scene editor (shown after LLM breakdown) -->
@@ -1037,7 +1040,6 @@
       <h2 style="color:#f59e0b">✏️ Review &amp; Edit Scenes</h2>
       <p style="font-size:0.8rem;color:var(--muted);margin-bottom:14px">Edit the image prompt or narration for any scene before generating.</p>
       <div id="story-scenes-list"></div>
-      <button class="gen-btn" style="background:#f59e0b;color:#000;margin-top:10px" id="btn-story-generate">🎬 Generate Story Video</button>
     </div>
 
     <!-- Progress card -->
@@ -1987,6 +1989,7 @@ document.getElementById('btn-story-breakdown').addEventListener('click', async (
 
     renderScenes(data.scenes);
     document.getElementById('story-scenes-card').classList.remove('hidden');
+    document.getElementById('btn-story-generate').disabled = false;
     document.getElementById('story-scenes-card').scrollIntoView({ behavior: 'smooth' });
   } catch (e) {
     alert(`Scene breakdown failed: ${e.message}`);
