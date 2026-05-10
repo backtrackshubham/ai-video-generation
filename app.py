@@ -1980,15 +1980,94 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
     )
 
     if backend == "gguf":
-        response = pipe.create_chat_completion(
+        # ── Two-step approach for GGUF (Q3 models can't reliably produce two-field JSON) ──
+        # Step 1: get Hindi narrations only (simple list of strings)
+        narr_system = (
+            f"You are a Hindi storyteller. Split the story into exactly {num_scenes} short scenes. "
+            f"Output ONLY a JSON array of exactly {num_scenes} Hindi strings in Devanagari script. "
+            "Each string is a 1-2 sentence scene narration (max 30 words). "
+            "No markdown, no code fences, no explanation. Start with [ and end with ]."
+        )
+        narr_resp = pipe.create_chat_completion(
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": f"Script:\n{script}"},
+                {"role": "system", "content": narr_system},
+                {"role": "user",   "content": f"Story:\n{script}"},
             ],
-            max_tokens=8192,
+            max_tokens=4096,
             temperature=0.0,
         )
-        result = response["choices"][0]["message"]["content"]
+        narr_raw = narr_resp["choices"][0]["message"]["content"]
+        log.info(f"GGUF step-1 narration raw (first 500): {narr_raw[:500]}")
+
+        # Parse narrations
+        narr_clean = _re.sub(r'```(?:json)?\s*', '', narr_raw).strip()
+        narr_json_str = _extract_complete_json_array(narr_clean) or _extract_complete_json_array(narr_raw)
+        narrations = []
+        if narr_json_str:
+            try:
+                parsed = json.loads(narr_json_str)
+                if isinstance(parsed, list):
+                    narrations = [str(x) for x in parsed if x]
+            except json.JSONDecodeError:
+                pass
+        # Fallback: split by lines/sentences if JSON failed
+        if not narrations:
+            log.warning("GGUF step-1: JSON parse failed, splitting by newline/period")
+            for line in (narr_clean or narr_raw).splitlines():
+                line = line.strip().strip('",[]')
+                if len(line) > 5:
+                    narrations.append(line)
+        narrations = narrations[:num_scenes]
+        log.info(f"GGUF step-1: got {len(narrations)} narrations")
+
+        # Step 2: get English image prompts for each narration
+        prompts_system = (
+            "You are a Stable Diffusion prompt writer specialising in ancient Indian mythology. "
+            f"For each of the {len(narrations)} Hindi scene descriptions provided, write one English image prompt. "
+            f"Output ONLY a JSON array of exactly {len(narrations)} English strings. "
+            "Each prompt: subject (character, appearance, clothing, expression), action/pose, environment (ancient India), "
+            "camera angle, lighting, style (ancient Indian mythology, highly detailed, cinematic, artstation, sharp focus). "
+            "Max 60 words per prompt. English only. No markdown, no fences, no explanation. Start with [ and end with ]."
+        )
+        narr_list_str = "\n".join(f"{i+1}. {n}" for i, n in enumerate(narrations))
+        img_resp = pipe.create_chat_completion(
+            messages=[
+                {"role": "system", "content": prompts_system},
+                {"role": "user",   "content": f"Scenes:\n{narr_list_str}"},
+            ],
+            max_tokens=4096,
+            temperature=0.0,
+        )
+        img_raw = img_resp["choices"][0]["message"]["content"]
+        log.info(f"GGUF step-2 image prompts raw (first 500): {img_raw[:500]}")
+
+        # Parse image prompts
+        img_clean = _re.sub(r'```(?:json)?\s*', '', img_raw).strip()
+        img_json_str = _extract_complete_json_array(img_clean) or _extract_complete_json_array(img_raw)
+        image_prompts = []
+        if img_json_str:
+            try:
+                parsed = json.loads(img_json_str)
+                if isinstance(parsed, list):
+                    image_prompts = [str(x) for x in parsed if x]
+            except json.JSONDecodeError:
+                pass
+        # Fallback: split by lines
+        if not image_prompts:
+            log.warning("GGUF step-2: JSON parse failed, splitting by newline")
+            for line in (img_clean or img_raw).splitlines():
+                line = line.strip().strip('",[]')
+                if len(line) > 5:
+                    image_prompts.append(line)
+        log.info(f"GGUF step-2: got {len(image_prompts)} image prompts")
+
+        # Zip together — pad missing image prompts with empty string
+        scenes_out = []
+        for i, narr in enumerate(narrations):
+            ip = image_prompts[i] if i < len(image_prompts) else ""
+            scenes_out.append({"narration": narr, "image_prompt": ip})
+        log.info(f"Scene breakdown (GGUF two-step): requested {num_scenes}, got {len(scenes_out)} scene(s)")
+        return scenes_out[:num_scenes]
     else:
         messages = [
             {"role": "system", "content": system_prompt},
@@ -2175,6 +2254,14 @@ def generate_scene_image(image_prompt: str, style: str, out_path: Path,
                          model_key: str = IMAGE_MODEL_DEFAULT) -> Path:
     """Generate a still image for one scene with live step logging."""
     from PIL import Image as PILImg  # noqa — ensure available
+
+    # If image_prompt is empty (e.g. GGUF step-2 failed), use a generic fallback
+    if not image_prompt or not image_prompt.strip():
+        image_prompt = (
+            "ancient Indian mythology scene, cinematic composition, "
+            "highly detailed, artstation, sharp focus"
+        )
+        log.warning(f"Scene {scene_idx+1}: empty image_prompt — using fallback prompt")
 
     lora_repo, lora_file, trigger = STYLE_LORAS.get(style, STYLE_LORAS["realistic"])
 
