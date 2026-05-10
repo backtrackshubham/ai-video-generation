@@ -2053,12 +2053,45 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
         log.error(f"LLM full output (nothing parseable):\n{result}")
         raise ValueError(f"LLM did not return parseable scenes. Raw:\n{result[:500]}")
 
-    out = []
-    for s in scenes[:num_scenes]:
-        out.append({
-            "narration":    str(s.get("narration", "")),
-            "image_prompt": str(s.get("image_prompt", "")),
-        })
+    # Normalise: handle [narration, image_prompt] list format from older GGUF models
+    # and also collect multiple per-line arrays if the model emitted one per line
+    def _normalise(raw_scenes):
+        out = []
+        for s in raw_scenes:
+            if isinstance(s, dict):
+                out.append({
+                    "narration":    str(s.get("narration", "")),
+                    "image_prompt": str(s.get("image_prompt", "")),
+                })
+            elif isinstance(s, list) and len(s) >= 2:
+                out.append({
+                    "narration":    str(s[0]),
+                    "image_prompt": str(s[1]),
+                })
+            elif isinstance(s, str):
+                # Single string — treat as narration, leave image_prompt empty
+                out.append({"narration": s, "image_prompt": ""})
+        return out
+
+    # If the parsed scenes look like per-line arrays (each element is a list/str),
+    # try to also gather additional arrays from subsequent lines
+    if scenes and not isinstance(scenes[0], dict):
+        # Collect all [...] arrays from every line
+        import re as _re2
+        all_arrays = []
+        for line in (result_clean or result).splitlines():
+            line = line.strip()
+            if line.startswith('[') and line.endswith(']'):
+                try:
+                    arr = json.loads(line)
+                    if isinstance(arr, list):
+                        all_arrays.append(arr)
+                except json.JSONDecodeError:
+                    pass
+        if len(all_arrays) > len(scenes):
+            scenes = all_arrays
+
+    out = _normalise(scenes)[:num_scenes]
     while len(out) < num_scenes:
         out.append({"narration": "", "image_prompt": ""})
 
