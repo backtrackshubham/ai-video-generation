@@ -2060,43 +2060,55 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
         log.error(f"LLM full output (nothing parseable):\n{result}")
         raise ValueError(f"LLM did not return parseable scenes. Raw:\n{result[:500]}")
 
-    # Normalise: handle [narration, image_prompt] list format from older GGUF models
-    # and also collect multiple per-line arrays if the model emitted one per line
+    # Normalise: handle all output formats from different LLM backends:
+    #   - [{"narration": "...", "image_prompt": "..."}]          — standard dict
+    #   - [["hindi...", "english..."]]                            — list of 2 strings
+    #   - [["hindi...", {"subject":..., "camera angle":...}]]    — string + structured dict (GGUF 0.2.90)
+    #   - one array per line                                      — per-line emission
+    def _dict_to_prompt(d: dict) -> str:
+        """Flatten a structured image-prompt dict into a single string."""
+        if "image_prompt" in d:
+            return str(d["image_prompt"])
+        # Flatten known cinematography keys in order
+        parts = []
+        for key in ("subject", "action/pose", "action", "environment", "camera angle", "lighting", "style"):
+            val = d.get(key, "")
+            if val:
+                parts.append(str(val))
+        return ", ".join(parts) if parts else str(d)
+
     def _normalise(raw_scenes):
         out = []
         for s in raw_scenes:
             if isinstance(s, dict):
-                out.append({
-                    "narration":    str(s.get("narration", "")),
-                    "image_prompt": str(s.get("image_prompt", "")),
-                })
+                # Standard dict with narration + image_prompt (or structured keys)
+                narration    = str(s.get("narration", ""))
+                image_prompt = _dict_to_prompt(s) if "image_prompt" not in s else str(s["image_prompt"])
+                out.append({"narration": narration, "image_prompt": image_prompt})
             elif isinstance(s, list) and len(s) >= 2:
-                out.append({
-                    "narration":    str(s[0]),
-                    "image_prompt": str(s[1]),
-                })
+                # [narration, image_prompt] — image_prompt may be str or structured dict
+                narration = str(s[0])
+                ip = s[1]
+                image_prompt = _dict_to_prompt(ip) if isinstance(ip, dict) else str(ip)
+                out.append({"narration": narration, "image_prompt": image_prompt})
             elif isinstance(s, str):
-                # Single string — treat as narration, leave image_prompt empty
                 out.append({"narration": s, "image_prompt": ""})
         return out
 
-    # If the parsed scenes look like per-line arrays (each element is a list/str),
-    # try to also gather additional arrays from subsequent lines
-    if scenes and not isinstance(scenes[0], dict):
-        # Collect all [...] arrays from every line
-        import re as _re2
-        all_arrays = []
-        for line in (result_clean or result).splitlines():
-            line = line.strip()
-            if line.startswith('[') and line.endswith(']'):
-                try:
-                    arr = json.loads(line)
-                    if isinstance(arr, list):
-                        all_arrays.append(arr)
-                except json.JSONDecodeError:
-                    pass
-        if len(all_arrays) > len(scenes):
-            scenes = all_arrays
+    # Always try to gather all per-line arrays — handles models that emit one [..] per line
+    all_arrays = []
+    for line in (result_clean or result).splitlines():
+        line = line.strip()
+        if line.startswith('[') and line.endswith(']'):
+            try:
+                arr = json.loads(line)
+                if isinstance(arr, list):
+                    all_arrays.append(arr)
+            except json.JSONDecodeError:
+                pass
+    # Use per-line arrays if we got more scenes that way
+    if len(all_arrays) > len(scenes):
+        scenes = all_arrays
 
     out = _normalise(scenes)[:num_scenes]
     # Do NOT pad with empty scenes — return only what the LLM actually generated.
