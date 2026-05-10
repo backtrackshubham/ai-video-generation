@@ -1615,10 +1615,11 @@ MODEL_REGISTRY = {
         "tab":      "t2v",
     },
     "svd": {
-        "hf_repo":  SVD_MODEL_ID,
-        "size_gb":  30,
-        "label":    "Stable Video Diffusion 1.1",
-        "tab":      "i2v",
+        "hf_repo":         SVD_MODEL_ID,
+        "size_gb":         30,
+        "label":           "Stable Video Diffusion 1.1",
+        "tab":             "i2v",
+        "ignore_patterns": ["*.fp16.safetensors"],
     },
     "wan-1.3b": {
         "hf_repo":  WAN_MODEL_ID_13B,
@@ -1749,7 +1750,8 @@ def api_download_model(model_key):
 
             local_dir = HF_CACHE / _hf_cache_name(hf_repo)
             local_dir.mkdir(parents=True, exist_ok=True)
-            snapshot_download(hf_repo, local_dir=str(local_dir))
+            snapshot_download(hf_repo, local_dir=str(local_dir),
+                              ignore_patterns=info.get("ignore_patterns"))
 
             stop_event.set()
             job["progress"] = 100

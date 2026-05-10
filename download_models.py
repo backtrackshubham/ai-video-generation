@@ -78,6 +78,8 @@ MODELS = {
         "hf_repo": "stabilityai/stable-video-diffusion-img2vid-xt",
         "size_gb": 30,
         "label":   "Stable Video Diffusion 1.1",
+        # Repo has both *.safetensors and *.fp16.safetensors — skip fp16 duplicates.
+        "ignore_patterns": ["*.fp16.safetensors"],
     },
     "wan-1.3b": {
         "hf_repo": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
@@ -94,6 +96,12 @@ MODELS = {
         "hf_repo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
         "size_gb": 4,
         "label":   "Stable Diffusion 1.5 (Story image gen)",
+        # Repo has FP16+FP32 safetensors, .bin, .ckpt, and safety_checker duplicates.
+        # Ignore patterns keep only FP32 safetensors and drop redundant formats.
+        "ignore_patterns": [
+            "*.fp16.safetensors", "*.fp16.bin", "*.bin",
+            "*.ckpt", "safety_checker/*",
+        ],
     },
     "qwen-7b": {
         "hf_repo": "Qwen/Qwen2.5-7B-Instruct",
@@ -121,6 +129,9 @@ MODELS = {
         "hf_repo": "facebook/mms-tts-hin",
         "size_gb": 0.4,
         "label":   "MMS-TTS Hindi (Hindi TTS — no login needed)",
+        # Repo has both model.safetensors and pytorch_model.bin (same weights).
+        # Keep only safetensors.
+        "ignore_patterns": ["pytorch_model.bin"],
     },
     # Style LoRAs for SD 1.5 — downloaded flat to models/loras/ to avoid Windows long path issues
     "lora-ghibli": {
@@ -215,9 +226,11 @@ def download_model(key: str):
             from huggingface_hub import snapshot_download
             local_dir = _local_model_dir(info["hf_repo"])
             local_dir.mkdir(parents=True, exist_ok=True)
+            ignore = info.get("ignore_patterns")
             snapshot_download(
                 info["hf_repo"],
                 local_dir=str(local_dir),
+                ignore_patterns=ignore,
             )
 
         print(green(f"  ✓ {info['label']} downloaded successfully"))
