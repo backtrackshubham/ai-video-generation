@@ -984,11 +984,11 @@
       <div id="story-style-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">⚡ Recommended VRAM: 4–6 GB (SD 1.5). CPU supported but slow. ~30s/image on GPU, ~5min/image on CPU.</div>
 
       <label style="margin-top:14px">LLM for scene breakdown</label>
-      <select id="story-llm">
-        <option value="qwen">Qwen2.5-7B-Instruct FP16 (best quality, ~5 GB VRAM / slow on CPU)</option>
-        <option value="qwen-gguf">Qwen2.5-7B-Instruct GGUF Q4 (fast on CPU, near-identical quality)</option>
-        <option value="phi3">Phi-3.5-Mini-Instruct (lightest, ~3 GB VRAM / fastest on CPU)</option>
-      </select>
+       <select id="story-llm">
+         <option value="qwen" selected>Qwen2.5-7B-Instruct FP16 (best quality, ~15 GB RAM on CPU)</option>
+         <option value="qwen-gguf">Qwen2.5-7B-Instruct GGUF Q3 (faster on CPU, requires llama-cpp-python)</option>
+         <option value="phi3">Phi-3.5-Mini-Instruct (lightest, ~8 GB RAM / fastest on CPU)</option>
+       </select>
       <div id="story-llm-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">⚡ Recommended VRAM: 5 GB (Qwen2.5-7B) or 3 GB (Phi-3.5-Mini). Runs on CPU — slower but works.</div>
 
       <label style="margin-top:14px">TTS Voice</label>
@@ -1956,7 +1956,7 @@ document.getElementById('story-voice').addEventListener('change', () => {
 
 const STORY_LLM_NOTES = {
   qwen:       '⚡ Recommended VRAM: 5 GB. FP16 weights — best quality. Slow on CPU (~2–3 min).',
-  'qwen-gguf':'⚡ Recommended VRAM: none (CPU optimized). Q4 quantized — 4–6x faster on CPU, near-identical quality. Requires llama-cpp-python.',
+  'qwen-gguf':'⚡ Faster on CPU (Q3 quantized). Requires llama-cpp-python — falls back to FP16 automatically if not installed.',
   phi3:       '⚡ Recommended VRAM: 3 GB. Lightest option — fastest on CPU. Slightly less reliable on complex scene formatting.',
 };
 

@@ -1883,32 +1883,37 @@ def _get_llm_pipe(llm_key: str):
 
     if llm_key in STORY_LLM_GGUF_FILE:
         # ── GGUF path via llama-cpp-python ────────────────────────
-        from llama_cpp import Llama
-        from huggingface_hub import hf_hub_download
+        try:
+            from llama_cpp import Llama
+        except ImportError:
+            log.warning("llama_cpp not installed — falling back to transformers for qwen-gguf")
+            llm_key = "qwen"
+            # fall through to transformers path below
 
-        repo_id  = STORY_LLM_MODELS[llm_key]
-        filename = STORY_LLM_GGUF_FILE[llm_key]
-        log.info(f"Loading GGUF {repo_id}/{filename}…")
-
-        # Check local download first (download_models.py saves to hf_cache/<cache-name>/<filename>)
-        local_gguf = HF_CACHE / _hf_cache_name(repo_id) / filename
-        if local_gguf.exists():
-            gguf_path = str(local_gguf)
-            log.info(f"Using local GGUF: {gguf_path}")
-        else:
+        if llm_key in STORY_LLM_GGUF_FILE:   # still gguf after fallback check
             from huggingface_hub import hf_hub_download
-            log.info("GGUF not found locally — downloading from HuggingFace…")
-            gguf_path = hf_hub_download(repo_id=repo_id, filename=filename)
-        n_gpu = -1 if DEVICE == "cuda" else 0   # -1 = all layers on GPU
-        llm = Llama(
-            model_path=gguf_path,
-            n_ctx=2048,
-            n_gpu_layers=n_gpu,
-            verbose=False,
-        )
-        _llm_cache[llm_key] = ("gguf", llm)
-        log.info(f"GGUF model loaded: {filename}")
-        return _llm_cache[llm_key]
+
+            repo_id  = STORY_LLM_MODELS[llm_key]
+            filename = STORY_LLM_GGUF_FILE[llm_key]
+            log.info(f"Loading GGUF {repo_id}/{filename}…")
+
+            local_gguf = HF_CACHE / _hf_cache_name(repo_id) / filename
+            if local_gguf.exists():
+                gguf_path = str(local_gguf)
+                log.info(f"Using local GGUF: {gguf_path}")
+            else:
+                log.info("GGUF not found locally — downloading from HuggingFace…")
+                gguf_path = hf_hub_download(repo_id=repo_id, filename=filename)
+            n_gpu = -1 if DEVICE == "cuda" else 0
+            llm = Llama(
+                model_path=gguf_path,
+                n_ctx=2048,
+                n_gpu_layers=n_gpu,
+                verbose=False,
+            )
+            _llm_cache[llm_key] = ("gguf", llm)
+            log.info(f"GGUF model loaded: {filename}")
+            return _llm_cache[llm_key]
 
     # ── Transformers path ─────────────────────────────────────────
     from transformers import pipeline as hf_pipeline, AutoTokenizer, AutoModelForCausalLM
