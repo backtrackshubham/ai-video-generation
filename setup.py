@@ -175,20 +175,39 @@ def install_dependencies():
     pip("install", "chumpy", "--no-build-isolation", "--quiet")
     pip("install", "git+https://github.com/openai/CLIP.git", "--quiet")
 
-    # llama-cpp-python: optional — needed only for GGUF Q4 LLM option in Story Video tab.
-    # On Windows it may fail due to long path limit (paths >260 chars in the bundled llama.cpp source).
-    # Fix: enable long paths via PowerShell (Admin):
-    #   New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
-    # then reboot and re-run setup.py, OR just skip it and use FP16/Phi-3.5 LLM options instead.
-    info("Installing llama-cpp-python (optional — GGUF Q4 LLM for Story Video tab)…")
+    # llama-cpp-python: optional — needed only for GGUF LLM option in Story Video tab.
+    # On RHEL 8 / GCC 8: std::filesystem is in a separate library (-lstdc++fs), requires v0.2.90 + linker flags.
+    # On Windows: may fail due to long path limit — enable long paths or skip and use FP16/Phi-3.5 instead.
+    info("Installing llama-cpp-python (optional — GGUF LLM for Story Video tab)…")
+    import platform, subprocess as _sp
+    _gcc_old = False
     try:
-        pip("install", "llama-cpp-python", "--quiet")
+        _res = _sp.run(["g++", "--version"], capture_output=True, text=True)
+        _ver = _res.stdout.split("\n")[0]
+        # GCC 8.x ships std::filesystem separately — detect by major version
+        import re as _re
+        _m = _re.search(r'\b([0-9]+)\.[0-9]+\.[0-9]+\b', _ver)
+        if _m and int(_m.group(1)) <= 8:
+            _gcc_old = True
+    except Exception:
+        pass
+
+    try:
+        if _gcc_old:
+            info("GCC 8 detected — using llama-cpp-python==0.2.90 with -lstdc++fs linker flag…")
+            import os as _os
+            _env = _os.environ.copy()
+            _env["CMAKE_ARGS"] = "-DCMAKE_EXE_LINKER_FLAGS='-lstdc++fs' -DCMAKE_SHARED_LINKER_FLAGS='-lstdc++fs'"
+            _sp.run(
+                [sys.executable, "-m", "pip", "install", "llama-cpp-python==0.2.90", "--quiet"],
+                env=_env, check=True,
+            )
+        else:
+            pip("install", "llama-cpp-python", "--quiet")
         info("llama-cpp-python installed.")
-    except SystemExit:
-        warn("llama-cpp-python install failed (likely Windows long path limit).")
+    except (SystemExit, Exception) as e:
+        warn(f"llama-cpp-python install failed: {e}")
         warn("The app will still work — use 'Qwen2.5-7B FP16' or 'Phi-3.5-Mini' in the Story Video tab.")
-        warn("To fix: enable Windows long paths and re-run setup.py")
-        warn("  PowerShell (Admin): New-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem' -Name 'LongPathsEnabled' -Value 1 -PropertyType DWORD -Force")
 
     info("All dependencies installed")
 
