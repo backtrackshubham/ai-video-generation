@@ -1953,18 +1953,19 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
     backend, pipe = _get_llm_pipe(llm_key)
 
     system_prompt = (
-        "You are a cinematographer and creative director. Split the story into exactly "
-        f"{num_scenes} scenes. "
+        "You are a cinematographer and creative director specialising in Indian mythology and epic storytelling. "
+        f"Split the story into exactly {num_scenes} scenes. "
         f"Output ONLY a JSON array of exactly {num_scenes} objects. "
         "Each object has exactly two keys:\n"
         '"narration": a SHORT Hindi voiceover in Devanagari script (1-2 sentences, max 30 words).\n'
-        '"image_prompt": a detailed English prompt for an AI image generator. '
-        "It MUST include: (1) camera angle e.g. 'wide shot', 'close-up', 'low angle'; "
-        "(2) character description — appearance, clothing, expression, posture; "
-        "(3) scene environment — location, time of day, weather, background details; "
-        "(4) lighting — e.g. 'golden hour sunlight', 'dramatic shadows', 'soft moonlight'; "
-        "(5) mood/atmosphere — e.g. 'tense', 'serene', 'epic'. "
-        "Keep it under 50 words. English only. No Hindi in image_prompt.\n"
+        '"image_prompt": a detailed English prompt for Stable Diffusion 1.5 following this exact order: '
+        "(1) subject — character name, appearance, clothing, expression, posture; "
+        "(2) action/pose — what the character is doing; "
+        "(3) environment — location, time of day, weather, background details rooted in ancient India; "
+        "(4) camera angle — e.g. 'wide shot', 'close-up', 'low angle', 'bird's eye view'; "
+        "(5) lighting — e.g. 'golden hour sunlight', 'dramatic rim lighting', 'soft moonlight', 'torchlight shadows'; "
+        "(6) style — 'ancient Indian mythology, highly detailed, cinematic, artstation, sharp focus'. "
+        "Keep image_prompt under 60 words. English only. No Hindi in image_prompt.\n"
         "No markdown, no code fences, no explanation. Start your response with [ and end with ]."
     )
 
@@ -2151,11 +2152,26 @@ def generate_scene_image(image_prompt: str, style: str, out_path: Path,
     from PIL import Image as PILImg  # noqa — ensure available
 
     lora_repo, lora_file, trigger = STYLE_LORAS.get(style, STYLE_LORAS["realistic"])
-    full_prompt = f"{trigger}, {image_prompt}" if trigger else image_prompt
-    negative    = "blurry, low quality, watermark, signature, text, ugly, deformed"
-    num_steps   = 25 if DEVICE == "cuda" else 8
 
-    log.info(f"  [scene {scene_idx+1}/{num_scenes}] Generating image: '{image_prompt[:60]}…'")
+    # Build prompt: LoRA trigger + user prompt + quality boosters
+    QUALITY_SUFFIX = (
+        "highly detailed, sharp focus, cinematic composition, "
+        "professional digital art, artstation, 8k resolution"
+    )
+    base_prompt  = f"{trigger}, {image_prompt}" if trigger else image_prompt
+    full_prompt  = f"{base_prompt}, {QUALITY_SUFFIX}"
+
+    # Comprehensive negative prompt for SD 1.5
+    negative = (
+        "blurry, low quality, watermark, signature, text, logo, "
+        "ugly, deformed, disfigured, bad anatomy, extra limbs, extra fingers, "
+        "missing limbs, fused fingers, too many fingers, long neck, "
+        "out of frame, cropped, draft, low resolution, grainy, noisy, "
+        "overexposed, underexposed, flat lighting, washed out colors"
+    )
+    num_steps = 25 if DEVICE == "cuda" else 8
+
+    log.info(f"  [scene {scene_idx+1}/{num_scenes}] prompt: '{full_prompt[:80]}…'")
 
     pipe = _get_sd_pipe(style)
 
