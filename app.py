@@ -1950,26 +1950,26 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
     backend, pipe = _get_llm_pipe(llm_key)
 
     system_prompt = (
-        "You are a creative director. Given a story script, break it into exactly "
-        f"{num_scenes} scenes. For each scene output a JSON object with two keys: "
-        '"narration" (the Hindi narration text the voiceover actor will read — write this in Hindi Devanagari script) '
-        'and "image_prompt" (a detailed English prompt for an AI image generator describing the visual). '
-        f'Output a JSON array of exactly {num_scenes} objects and nothing else. No markdown, no explanation.'
+        "You are a creative director. Split the story into exactly "
+        f"{num_scenes} scenes. "
+        f"Output ONLY a JSON array of exactly {num_scenes} objects. "
+        "Each object has exactly two keys: "
+        '"narration": a SHORT Hindi voiceover in Devanagari script (1-2 sentences, max 30 words), '
+        '"image_prompt": a SHORT English prompt for image generation (1 sentence, max 20 words, English only). '
+        "No markdown, no code fences, no explanation. Start your response with [ and end with ]."
     )
 
     if backend == "gguf":
-        # llama-cpp-python chat completion
         response = pipe.create_chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": f"Script:\n{script}"},
             ],
-            max_tokens=4096,
+            max_tokens=8192,
             temperature=0.0,
         )
         result = response["choices"][0]["message"]["content"]
     else:
-        # transformers pipeline
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": f"Script:\n{script}"},
@@ -1980,21 +1980,34 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
         else:
             prompt_text = f"<s>[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n{script} [/INST]"
 
-        raw = pipe(prompt_text, max_new_tokens=4096)[0]["generated_text"]
+        raw = pipe(prompt_text, max_new_tokens=8192)[0]["generated_text"]
         result = raw[len(prompt_text):] if raw.startswith(prompt_text) else raw
 
-    log.info(f"LLM raw output (first 800 chars): {result[:800]}")
+    log.info(f"LLM raw output (first 1000 chars): {result[:1000]}")
 
-    # Strip markdown code fences if present
+    # Strip markdown code fences
     result_clean = _re.sub(r'```(?:json)?\s*', '', result).strip()
 
-    # Find the outermost JSON array (handle nested brackets properly)
-    def _extract_json_array(text: str):
+    def _extract_complete_json_array(text: str):
+        """Find outermost [...] using bracket depth counting."""
         start = text.find('[')
         if start == -1:
             return None
         depth = 0
+        in_string = False
+        escape = False
         for i, ch in enumerate(text[start:], start):
+            if escape:
+                escape = False
+                continue
+            if ch == '\\' and in_string:
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
             if ch == '[':
                 depth += 1
             elif ch == ']':
@@ -2003,18 +2016,39 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
                     return text[start:i+1]
         return None
 
-    json_str = _extract_json_array(result_clean) or _extract_json_array(result)
-    if not json_str:
-        log.error(f"LLM full output (no JSON array found):\n{result}")
-        raise ValueError(f"LLM did not return a JSON array. Raw:\n{result[:500]}")
+    def _salvage_partial_scenes(text: str) -> list:
+        """Extract fully-formed JSON objects from a truncated array."""
+        salvaged = []
+        # Match complete {...} objects (handles nested quotes via greedy approach)
+        for m in _re.finditer(r'\{[^{}]*\}', text, _re.DOTALL):
+            try:
+                obj = json.loads(m.group(0))
+                if isinstance(obj, dict) and ("narration" in obj or "image_prompt" in obj):
+                    salvaged.append(obj)
+            except json.JSONDecodeError:
+                pass
+        return salvaged
 
-    try:
-        scenes = json.loads(json_str)
-    except json.JSONDecodeError as e:
-        log.error(f"JSON parse failed: {e}\nJSON string:\n{json_str[:800]}")
-        raise ValueError(f"LLM returned invalid JSON: {e}")
-    if not isinstance(scenes, list):
-        raise ValueError("LLM output is not a JSON array.")
+    # Try full parse first
+    json_str = _extract_complete_json_array(result_clean) or _extract_complete_json_array(result)
+    scenes = None
+
+    if json_str:
+        try:
+            scenes = json.loads(json_str)
+            if not isinstance(scenes, list):
+                scenes = None
+        except json.JSONDecodeError as e:
+            log.warning(f"JSON parse failed ({e}), attempting salvage…")
+
+    # If full parse failed, salvage completed objects from truncated output
+    if not scenes:
+        log.warning("Full JSON parse failed — salvaging partial scenes from truncated output…")
+        scenes = _salvage_partial_scenes(result_clean) or _salvage_partial_scenes(result)
+
+    if not scenes:
+        log.error(f"LLM full output (nothing parseable):\n{result}")
+        raise ValueError(f"LLM did not return parseable scenes. Raw:\n{result[:500]}")
 
     out = []
     for s in scenes[:num_scenes]:
