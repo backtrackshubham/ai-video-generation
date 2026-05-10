@@ -94,7 +94,7 @@ MODELS = {
     # ── Story Video pipeline ──────────────────────────────────────
     "sd15": {
         "hf_repo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
-        "size_gb": 1.7,
+        "size_gb": 4.3,
         "label":   "Stable Diffusion 1.5 (Story image gen)",
         # Keep only: diffusers-format FP32 safetensors (text_encoder, unet, vae)
         #            + tokenizer, scheduler, model_index, feature_extractor configs
@@ -240,6 +240,7 @@ def download_model(key: str):
                 info["hf_repo"],
                 local_dir=str(local_dir),
                 ignore_patterns=ignore,
+                max_workers=1,   # serialize downloads — avoids bandwidth splitting on corporate proxies
             )
 
         print(green(f"  ✓ {info['label']} downloaded successfully"))
