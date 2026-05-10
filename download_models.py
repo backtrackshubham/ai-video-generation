@@ -94,13 +94,22 @@ MODELS = {
     # ── Story Video pipeline ──────────────────────────────────────
     "sd15": {
         "hf_repo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
-        "size_gb": 4,
+        "size_gb": 1.7,
         "label":   "Stable Diffusion 1.5 (Story image gen)",
-        # Repo has FP16+FP32 safetensors, .bin, .ckpt, and safety_checker duplicates.
-        # Ignore patterns keep only FP32 safetensors and drop redundant formats.
+        # Keep only: diffusers-format FP32 safetensors (text_encoder, unet, vae)
+        #            + tokenizer, scheduler, model_index, feature_extractor configs
+        # Exclude everything else to avoid downloading ~16 GB of duplicates.
         "ignore_patterns": [
-            "*.fp16.safetensors", "*.fp16.bin", "*.bin",
-            "*.ckpt", "safety_checker/*",
+            "*.fp16.safetensors",       # FP16 weight duplicates
+            "*.fp16.bin",               # FP16 bin duplicates
+            "*.bin",                    # all .bin weight files (safetensors preferred)
+            "*.ckpt",                   # monolithic checkpoint files
+            "*.non_ema.safetensors",    # non-EMA unet variant
+            "*.non_ema.bin",
+            "v1-5-pruned*.safetensors", # standalone pruned checkpoints
+            "v1-5-pruned*.ckpt",
+            "v1-5-pruned-emaonly*",
+            "safety_checker/*",         # safety checker (not needed, disabled in code)
         ],
     },
     "qwen-7b": {
