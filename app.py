@@ -1953,12 +1953,18 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
     backend, pipe = _get_llm_pipe(llm_key)
 
     system_prompt = (
-        "You are a creative director. Split the story into exactly "
+        "You are a cinematographer and creative director. Split the story into exactly "
         f"{num_scenes} scenes. "
         f"Output ONLY a JSON array of exactly {num_scenes} objects. "
-        "Each object has exactly two keys: "
-        '"narration": a SHORT Hindi voiceover in Devanagari script (1-2 sentences, max 30 words), '
-        '"image_prompt": a SHORT English prompt for image generation (1 sentence, max 20 words, English only). '
+        "Each object has exactly two keys:\n"
+        '"narration": a SHORT Hindi voiceover in Devanagari script (1-2 sentences, max 30 words).\n'
+        '"image_prompt": a detailed English prompt for an AI image generator. '
+        "It MUST include: (1) camera angle e.g. 'wide shot', 'close-up', 'low angle'; "
+        "(2) character description — appearance, clothing, expression, posture; "
+        "(3) scene environment — location, time of day, weather, background details; "
+        "(4) lighting — e.g. 'golden hour sunlight', 'dramatic shadows', 'soft moonlight'; "
+        "(5) mood/atmosphere — e.g. 'tense', 'serene', 'epic'. "
+        "Keep it under 50 words. English only. No Hindi in image_prompt.\n"
         "No markdown, no code fences, no explanation. Start your response with [ and end with ]."
     )
 
