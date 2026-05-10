@@ -1029,7 +1029,14 @@
 
       <div id="story-dl-banner" class="model-dl-banner hidden"></div>
 
-      <div style="display:flex;gap:12px;margin-top:18px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem;color:var(--muted);user-select:none">
+          <input type="checkbox" id="story-auto-generate" style="width:16px;height:16px;cursor:pointer;accent-color:#f59e0b">
+          Auto-generate video after scene breakdown
+        </label>
+      </div>
+
+      <div style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap">
         <button class="gen-btn" style="background:#f59e0b;color:#000" id="btn-story-breakdown">🔍 Break into Scenes</button>
         <button class="gen-btn" style="background:#f59e0b;color:#000" id="btn-story-generate" disabled title="Run 'Break into Scenes' first">🎬 Generate Story Video</button>
       </div>
@@ -1990,7 +1997,14 @@ document.getElementById('btn-story-breakdown').addEventListener('click', async (
     renderScenes(data.scenes);
     document.getElementById('story-scenes-card').classList.remove('hidden');
     document.getElementById('btn-story-generate').disabled = false;
-    document.getElementById('story-scenes-card').scrollIntoView({ behavior: 'smooth' });
+
+    if (document.getElementById('story-auto-generate').checked) {
+      document.getElementById('story-scenes-card').scrollIntoView({ behavior: 'smooth' });
+      // Small delay so the user sees the scenes before generation kicks off
+      setTimeout(() => document.getElementById('btn-story-generate').click(), 800);
+    } else {
+      document.getElementById('story-scenes-card').scrollIntoView({ behavior: 'smooth' });
+    }
   } catch (e) {
     alert(`Scene breakdown failed: ${e.message}`);
   } finally {
