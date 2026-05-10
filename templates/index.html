@@ -972,7 +972,18 @@
         <span class="range-val" id="story-scenes-disp">4</span>
       </div>
 
-      <label>Image Style</label>
+      <label>Image Model</label>
+      <select id="story-image-model">
+        <option value="dreamshaper" selected>DreamShaper 8 — cinematic illustrations, best anatomy (recommended)</option>
+        <option value="realistic">Realistic Vision V5.1 — photorealistic people &amp; scenes</option>
+        <option value="deliberate">Deliberate v2 — detailed realistic illustrations</option>
+        <option value="sd15">SD 1.5 base — general purpose (lower quality)</option>
+      </select>
+      <div id="story-imgmodel-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
+        DreamShaper 8: best for mythology &amp; cinematic scenes. Downloads ~2 GB on first use. CPU: ~5 min/image.
+      </div>
+
+      <label style="margin-top:14px">Image Style</label>
       <select id="story-style">
         <option value="realistic">Realistic</option>
         <option value="ghibli">Ghibli</option>
@@ -981,7 +992,7 @@
         <option value="futuristic">Futuristic</option>
         <option value="scifi">Sci-Fi</option>
       </select>
-      <div id="story-style-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">⚡ Recommended VRAM: 4–6 GB (SD 1.5). CPU supported but slow. ~30s/image on GPU, ~5min/image on CPU.</div>
+      <div id="story-style-note" style="font-size:0.76rem;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">Style applies LoRA on top of the selected image model. Realistic = no LoRA (use model's native style).</div>
 
       <label style="margin-top:14px">LLM for scene breakdown</label>
        <select id="story-llm">
@@ -1954,6 +1965,17 @@ document.getElementById('story-voice').addEventListener('change', () => {
   document.getElementById('story-voice-note').textContent = STORY_VOICE_NOTES[v] || '';
 });
 
+const STORY_IMGMODEL_NOTES = {
+  dreamshaper: 'DreamShaper 8: cinematic illustrations, excellent anatomy, no "painting blob" artefacts. Best for mythology. ~2 GB download.',
+  realistic:   'Realistic Vision V5.1: photorealistic people and environments. Needs VAE for best results. ~2 GB download.',
+  deliberate:  'Deliberate v2: detailed realistic illustrations with strong prompt adherence. ~2 GB download.',
+  sd15:        'SD 1.5 base model: general purpose. Already downloaded. Lower quality than fine-tuned models.',
+};
+document.getElementById('story-image-model').addEventListener('change', () => {
+  const v = document.getElementById('story-image-model').value;
+  document.getElementById('story-imgmodel-note').textContent = STORY_IMGMODEL_NOTES[v] || '';
+});
+
 const STORY_LLM_NOTES = {
   qwen:       '⚡ Recommended VRAM: 5 GB. FP16 weights — best quality. Slow on CPU (~2–3 min).',
   'qwen-gguf':'⚡ Faster on CPU (Q3 quantized). Requires llama-cpp-python — falls back to FP16 automatically if not installed.',
@@ -2043,11 +2065,12 @@ function collectScenes() {
 let storyPollTimer = null;
 document.getElementById('btn-story-generate').addEventListener('click', async () => {
   const title      = document.getElementById('story-title').value.trim();
-  const style      = document.getElementById('story-style').value;
-  const voice      = document.getElementById('story-voice').value;
-  const transition = document.getElementById('story-transition').value;
-  const transDur   = parseFloat(document.getElementById('story-trans-dur').value);
-  const scenes     = collectScenes();
+  const style       = document.getElementById('story-style').value;
+  const voice       = document.getElementById('story-voice').value;
+  const transition  = document.getElementById('story-transition').value;
+  const transDur    = parseFloat(document.getElementById('story-trans-dur').value);
+  const image_model = document.getElementById('story-image-model').value;
+  const scenes      = collectScenes();
 
   if (!scenes.length) { alert('No scenes found. Run breakdown first.'); return; }
   if (scenes.some(s => !s.narration && !s.image_prompt)) {
@@ -2068,7 +2091,7 @@ document.getElementById('btn-story-generate').addEventListener('click', async ()
     const res = await fetch(`${API}/api/generate_story`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ title, style, voice, scenes, transition, transition_duration: transDur }),
+      body: JSON.stringify({ title, style, voice, scenes, transition, transition_duration: transDur, image_model }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');

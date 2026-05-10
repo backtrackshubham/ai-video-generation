@@ -1836,6 +1836,16 @@ STORY_LLM_GGUF_FILE = {
 
 SD15_MODEL_ID = "stable-diffusion-v1-5/stable-diffusion-v1-5"
 
+# Fine-tuned SD 1.5 checkpoint models — all drop-in replacements, no code changes needed.
+# DreamShaper 8 is the default: cinematic illustrations, excellent anatomy, no "painting blob" artefacts.
+IMAGE_MODELS = {
+    "dreamshaper":      "Lykon/dreamshaper-8",
+    "realistic":        "SG161222/Realistic_Vision_V5.1_noVAE",
+    "deliberate":       "XpucT/Deliberate",
+    "sd15":             "stable-diffusion-v1-5/stable-diffusion-v1-5",
+}
+IMAGE_MODEL_DEFAULT = "dreamshaper"
+
 # Style → (LoRA repo, LoRA filename, trigger words prepended to prompt)
 STYLE_LORAS = {
     "realistic":  (None, None, "photorealistic, highly detailed, 8k"),
@@ -2119,18 +2129,20 @@ def llm_break_into_scenes(script: str, num_scenes: int, llm_key: str) -> list:
 
 # ── Image generation: SD 1.5 + LoRA ──────────────────────────────────────────
 
-def _get_sd_pipe(style: str):
-    """Load SD 1.5 pipeline with style LoRA, cached per style."""
-    if style in _sd_pipe_cache:
-        return _sd_pipe_cache[style]
+def _get_sd_pipe(style: str, model_key: str = IMAGE_MODEL_DEFAULT):
+    """Load fine-tuned SD 1.5 pipeline with style LoRA, cached per (model, style)."""
+    cache_key = f"{model_key}:{style}"
+    if cache_key in _sd_pipe_cache:
+        return _sd_pipe_cache[cache_key]
 
     from diffusers import StableDiffusionPipeline
 
+    model_id = IMAGE_MODELS.get(model_key, IMAGE_MODELS[IMAGE_MODEL_DEFAULT])
     lora_repo, lora_file, _ = STYLE_LORAS.get(style, STYLE_LORAS["realistic"])
-    log.info(f"Loading SD 1.5 for style={style} on {DEVICE}…")
+    log.info(f"Loading image model '{model_key}' ({model_id}) style={style} on {DEVICE}…")
     dtype = torch.float16 if DEVICE == "cuda" else torch.float32
 
-    _src, _kw = _pretrained_source(SD15_MODEL_ID)
+    _src, _kw = _pretrained_source(model_id)
     pipe = StableDiffusionPipeline.from_pretrained(
         _src,
         torch_dtype=dtype,
@@ -2152,14 +2164,15 @@ def _get_sd_pipe(style: str):
         pipe = pipe.to("cuda")
     pipe.enable_attention_slicing()
 
-    _sd_pipe_cache[style] = pipe
-    log.info(f"SD 1.5 ({style}) ready.")
+    _sd_pipe_cache[cache_key] = pipe
+    log.info(f"Image model '{model_key}' ({style}) ready.")
     return pipe
 
 
 def generate_scene_image(image_prompt: str, style: str, out_path: Path,
                          job_id: str = None, scene_idx: int = 0,
-                         num_scenes: int = 1) -> Path:
+                         num_scenes: int = 1,
+                         model_key: str = IMAGE_MODEL_DEFAULT) -> Path:
     """Generate a still image for one scene with live step logging."""
     from PIL import Image as PILImg  # noqa — ensure available
 
@@ -2185,7 +2198,7 @@ def generate_scene_image(image_prompt: str, style: str, out_path: Path,
 
     log.info(f"  [scene {scene_idx+1}/{num_scenes}] prompt: '{full_prompt[:80]}…'")
 
-    pipe = _get_sd_pipe(style)
+    pipe = _get_sd_pipe(style, model_key)
 
     def _step_cb(pipe_obj, step_idx, timestep, callback_kwargs):
         pct = int((step_idx + 1) / num_steps * 100)
@@ -2452,7 +2465,8 @@ def stitch_story_video(scene_images: list, scene_audios: list, out_path: Path,
 # ── Story generation worker ───────────────────────────────────────────────────
 
 def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug: str,
-                         transition: str = "fade", transition_duration: float = 0.8):
+                         transition: str = "fade", transition_duration: float = 0.8,
+                         image_model: str = IMAGE_MODEL_DEFAULT):
     jlog = make_job_logger(slug, LOG_STORY_DIR)
     jlog.info(f"[{job_id}] Story gen | scenes={len(scenes)} style={style} voice={voice}")
     log.info(f"[story:{slug}] Starting — {len(scenes)} scenes, style={style}, voice={voice}")
@@ -2468,7 +2482,7 @@ def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug
 
     try:
         # ── Phase 1: Generate images ──────────────────────────────────────────
-        log.info(f"[story:{slug}] Phase 1/3 — generating {n} scene image(s) with SD 1.5 ({style})…")
+        log.info(f"[story:{slug}] Phase 1/3 — generating {n} scene image(s) with {image_model} ({style})…")
         for i, scene in enumerate(scenes):
             jobs[job_id].update(
                 status="generating_images",
@@ -2480,6 +2494,7 @@ def run_story_generation(job_id: str, scenes: list, style: str, voice: str, slug
             generate_scene_image(
                 scene.get("image_prompt", ""), style, img_path,
                 job_id=job_id, scene_idx=i, num_scenes=n,
+                model_key=image_model,
             )
             scene_image_paths.append(img_path)
             scene_image_urls.append(f"/outputs/story/{slug}/scene_{i:03d}.png")
@@ -2577,6 +2592,7 @@ def api_generate_story():
     title               = data.get("title", "").strip()
     transition          = data.get("transition", "fade").lower().strip()
     transition_duration = max(0.3, min(2.0, float(data.get("transition_duration", 0.8))))
+    image_model         = data.get("image_model", IMAGE_MODEL_DEFAULT).strip()
 
     valid_transitions = {"fade","fadeblack","fadewhite","dissolve","wipeleft","wiperight",
                          "wipeup","wipedown","slideleft","slideright","circleopen",
@@ -2590,6 +2606,8 @@ def api_generate_story():
         voice = "mms_hindi"
     if transition not in valid_transitions:
         transition = "fade"
+    if image_model not in IMAGE_MODELS:
+        image_model = IMAGE_MODEL_DEFAULT
 
     job_id = str(uuid.uuid4())
     slug   = slugify(title) if title else f"story-{job_id[:8]}"
@@ -2612,16 +2630,18 @@ def api_generate_story():
         "style":           style,
         "voice":           voice,
         "llm":             data.get("llm", ""),
+        "image_model":     image_model,
     }
 
     threading.Thread(
         target=run_story_generation,
         args=(job_id, scenes, style, voice, slug),
-        kwargs={"transition": transition, "transition_duration": transition_duration},
+        kwargs={"transition": transition, "transition_duration": transition_duration,
+                "image_model": image_model},
         daemon=True,
     ).start()
 
-    log.info(f"[{job_id}] Story job: {len(scenes)} scenes, style={style}, voice={voice}, transition={transition}")
+    log.info(f"[{job_id}] Story job: {len(scenes)} scenes, style={style}, voice={voice}, image_model={image_model}, transition={transition}")
     return jsonify({"job_id": job_id}), 202
 
 
